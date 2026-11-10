@@ -104,11 +104,7 @@ function pintarNav() {
     return `<a href="${ruta}" class="${on ? "on" : ""}">${esc(t)}</a>`;
   }).join("");
 
-  const sel = $("#sel-empresa");
-  sel.hidden = !esAdmin();
-  if (esAdmin()) {
-    sel.innerHTML = H.empresas.map((e) => `<option value="${e.id}"${e.id === H.empresa?.id ? " selected" : ""}>${esc(e.nombre)}</option>`).join("");
-  }
+  pintarEmpresas();
   const p = H.perfil;
   const donde = esAdmin() ? "" : esCliente() ? H.cliente?.nombre : H.empresa?.nombre;
   $("#quien").innerHTML = `${esc(p.nombre || p.email)}<br>${esc(ROLES[p.rol])}${donde ? " · " + esc(donde) : ""}`;
@@ -125,8 +121,25 @@ export function cambiarEmpresa(id) {
 }
 window.horusCambiarEmpresa = cambiarEmpresa;
 
-$("#sel-empresa").addEventListener("change", (ev) => {
-  cambiarEmpresa(ev.target.value);
+// Logos junto a "horus": el administrador cambia de empresa haciendo clic; el resto ve solo la suya
+const LOGOS = { omega: "icons/omega.png", lafken: "icons/lafken.png" };
+const logoEmpresa = (e) => (LOGOS[e.id] ? `<img src="${LOGOS[e.id]}" alt="${esc(e.nombre)}">` : `<span class="logo-txt">${esc(e.nombre)}</span>`);
+function pintarEmpresas() {
+  const cont = $("#empresas-app");
+  if (esAdmin()) {
+    cont.innerHTML = H.empresas.map((e) => {
+      const on = e.id === H.empresa?.id;
+      return `<button type="button" class="logo-empresa${on ? " on" : ""}" data-empresa="${e.id}" aria-pressed="${on}"
+        title="${on ? "Viendo " : "Cambiar a "}${esc(e.nombre)}">${logoEmpresa(e)}</button>`;
+    }).join("");
+  } else {
+    cont.innerHTML = H.empresa ? `<span class="logo-empresa on">${logoEmpresa(H.empresa)}</span>` : "";
+  }
+}
+
+$("#empresas-app").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-empresa]");
+  if (!b || !esAdmin() || !cambiarEmpresa(b.dataset.empresa)) return;
   const primero = modulosVisibles()[0];
   const actual = location.hash.split("/").slice(0, 2).join("/");
   const sigue = Object.values(MODULOS).some((m) => m.ruta === actual) && moduloActivo(Object.keys(MODULOS).find((k) => MODULOS[k].ruta === actual));

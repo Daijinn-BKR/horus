@@ -58,10 +58,11 @@ h2 { font-size: 17px; margin: 0 0 10px; }
   padding: 24px; width: 100%; max-width: 400px; }
 .caja .primary { width: 100%; margin-top: 18px; }
 .logo { display: flex; align-items: center; justify-content: center; gap: 10px; font: 700 34px/1 Quicksand, system-ui, sans-serif; letter-spacing: .5px; }
-.logo img { width: 56px; height: 56px; border-radius: 12px; }
+.logo img { width: 60px; height: 60px; }
 .login-top { display: flex; justify-content: flex-end; margin: -12px -12px 0 0; }
 .login-empresas { justify-content: center; margin: 14px 0 6px; }
-.login-empresas img { height: 38px; }
+.login-empresas { gap: 16px; }
+.login-empresas img { height: 40px; }
 .error-txt { color: var(--bad); font-size: 14px; min-height: 1.2em; margin-top: 8px; }
 
 /* ---------- Barra superior y navegación ---------- */
@@ -69,11 +70,21 @@ h2 { font-size: 17px; margin: 0 0 10px; }
 .barra-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 16px; flex-wrap: wrap; }
 .barra .izq { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .marca { display: flex; align-items: center; gap: 8px; color: var(--text); text-decoration: none; font: 700 22px/1 Quicksand, system-ui, sans-serif; letter-spacing: .3px; }
-.marca img { width: 34px; height: 34px; border-radius: 8px; }
-/* Logos de las empresas: van sobre blanco para que se lean también en modo oscuro */
-.empresas { display: flex; align-items: center; gap: 8px; }
-.empresas img { height: 30px; width: auto; background: #fff; border-radius: 6px; padding: 2px 4px; }
-.barra .empresas { padding-left: 14px; border-left: 1px solid var(--line); }
+.marca img { width: 36px; height: 36px; }
+/* Logos de las empresas (en tema oscuro se muestran en blanco) */
+.empresas { display: flex; align-items: center; gap: 6px; }
+.empresas img { height: 30px; width: auto; display: block; }
+.barra .empresas { padding-left: 12px; border-left: 1px solid var(--line); }
+.logo-empresa { display: inline-flex; align-items: center; padding: 4px 6px; min-height: 0; border: 0;
+  border-radius: 8px; background: transparent; position: relative; }
+button.logo-empresa { opacity: .4; transition: opacity .15s; }
+button.logo-empresa:hover { opacity: .75; background: var(--bg); }
+button.logo-empresa.on { opacity: 1; cursor: default; }
+button.logo-empresa.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 3px;
+  border-radius: 2px; background: var(--accent); }
+.logo-txt { font-weight: 700; font-size: 14px; color: var(--text); }
+:root[data-theme="dark"] .empresas img { filter: brightness(0) invert(1); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .empresas img { filter: brightness(0) invert(1); } }
 .btn-tema { min-width: 38px; font-size: 16px; }
 @media (max-width: 520px) {
   .barra .empresas img { height: 24px; }
