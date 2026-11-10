@@ -172,7 +172,7 @@ async function setSesion(sesion) {
   try {
     const ok = await cargarPerfil();
     if (!ok) {
-      mensaje(`<div class="logo"><img src="icons/icon-192.png" alt="">HORUS</div>
+      mensaje(`<div class="logo"><img src="icons/emblema.png" alt="">horus</div>
         <h2 style="margin-top:16px">Tu cuenta aún no tiene acceso</h2>
         <p class="muted">${esc(H.usuario.email)}: pide al administrador que te asigne un rol.</p>
         <button class="primary" id="btn-salir-msg">Salir</button>`);
@@ -234,3 +234,23 @@ if (!configurado) {
   // INITIAL_SESSION llega siempre al cargar (con o sin sesión)
   sb.auth.onAuthStateChange((_ev, sesion) => setTimeout(() => setSesion(sesion), 0));
 }
+
+// ---------- Tema claro / oscuro ----------
+const sistemaOscuro = matchMedia("(prefers-color-scheme: dark)");
+const temaActual = () => document.documentElement.dataset.theme || (sistemaOscuro.matches ? "dark" : "light");
+function pintarBotonesTema() {
+  const oscuro = temaActual() === "dark";
+  document.querySelectorAll(".btn-tema").forEach((b) => {
+    b.textContent = oscuro ? "☀️" : "🌙";
+    b.setAttribute("aria-label", oscuro ? "Cambiar a modo claro" : "Cambiar a modo oscuro");
+  });
+}
+document.querySelectorAll(".btn-tema").forEach((b) => b.addEventListener("click", () => {
+  const nuevo = temaActual() === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = nuevo;
+  try { localStorage.setItem("horus.tema", nuevo === "dark" ? "oscuro" : "claro"); } catch (e) { /* sin almacenamiento */ }
+  pintarBotonesTema();
+  if (location.hash.startsWith("#/sala/")) router(); // los gráficos toman los colores al dibujarse
+}));
+sistemaOscuro.addEventListener("change", pintarBotonesTema);
+pintarBotonesTema();

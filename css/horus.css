@@ -5,16 +5,23 @@
   --ok: #1d7a46; --ok-bg: #e5f5ec; --warn: #9a4a00; --warn-bg: #fff1dc;
   --info: #1f5fbf; --info-bg: #e6efff; --bad: #b42318; --bad-bg: #fdecea;
   --temp: #e8590c; --hum: #1c7ed6; --pres: #7048e8;
-  --radius: 10px;
+  --radius: 10px; color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #12171d; --panel: #1b222b; --text: #e8ecf1; --muted: #93a0b1;
     --line: #2c3541; --accent: #5b9bff; --accent-text: #0b1220;
     --ok: #4cc47f; --ok-bg: #16301f; --warn: #f0a542; --warn-bg: #3a2a10;
     --info: #8ab6ff; --info-bg: #1a2a45; --bad: #ff7b6e; --bad-bg: #3d1a17;
-    --temp: #ff8a4c; --hum: #4dabf7; --pres: #9775fa;
+    --temp: #ff8a4c; --hum: #4dabf7; --pres: #9775fa; color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+    --bg: #12171d; --panel: #1b222b; --text: #e8ecf1; --muted: #93a0b1;
+    --line: #2c3541; --accent: #5b9bff; --accent-text: #0b1220;
+    --ok: #4cc47f; --ok-bg: #16301f; --warn: #f0a542; --warn-bg: #3a2a10;
+    --info: #8ab6ff; --info-bg: #1a2a45; --bad: #ff7b6e; --bad-bg: #3d1a17;
+    --temp: #ff8a4c; --hum: #4dabf7; --pres: #9775fa; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -50,15 +57,29 @@ h2 { font-size: 17px; margin: 0 0 10px; }
 .caja { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 24px; width: 100%; max-width: 400px; }
 .caja .primary { width: 100%; margin-top: 18px; }
-.logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 22px; letter-spacing: .5px; }
-.logo img { width: 40px; height: 40px; border-radius: 8px; }
+.logo { display: flex; align-items: center; justify-content: center; gap: 10px; font: 700 34px/1 Quicksand, system-ui, sans-serif; letter-spacing: .5px; }
+.logo img { width: 56px; height: 56px; border-radius: 12px; }
+.login-top { display: flex; justify-content: flex-end; margin: -12px -12px 0 0; }
+.login-empresas { justify-content: center; margin: 14px 0 6px; }
+.login-empresas img { height: 38px; }
 .error-txt { color: var(--bad); font-size: 14px; min-height: 1.2em; margin-top: 8px; }
 
 /* ---------- Barra superior y navegación ---------- */
 .barra { position: sticky; top: 0; z-index: 10; background: var(--panel); border-bottom: 1px solid var(--line); }
 .barra-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 16px; flex-wrap: wrap; }
-.marca { display: flex; align-items: center; gap: 8px; font-weight: 800; color: var(--text); text-decoration: none; font-size: 18px; letter-spacing: .5px; }
-.marca img { width: 30px; height: 30px; border-radius: 6px; }
+.barra .izq { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.marca { display: flex; align-items: center; gap: 8px; color: var(--text); text-decoration: none; font: 700 22px/1 Quicksand, system-ui, sans-serif; letter-spacing: .3px; }
+.marca img { width: 34px; height: 34px; border-radius: 8px; }
+/* Logos de las empresas: van sobre blanco para que se lean también en modo oscuro */
+.empresas { display: flex; align-items: center; gap: 8px; }
+.empresas img { height: 30px; width: auto; background: #fff; border-radius: 6px; padding: 2px 4px; }
+.barra .empresas { padding-left: 14px; border-left: 1px solid var(--line); }
+.btn-tema { min-width: 38px; font-size: 16px; }
+@media (max-width: 520px) {
+  .barra .empresas img { height: 24px; }
+  .barra .izq { gap: 10px; }
+  .barra .empresas { padding-left: 10px; }
+}
 .barra .der { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .barra select { width: auto; min-height: 36px; padding: 4px 8px; }
 .quien { font-size: 13px; color: var(--muted); text-align: right; line-height: 1.2; }

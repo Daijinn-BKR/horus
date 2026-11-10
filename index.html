@@ -10,8 +10,15 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Horus">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" type="image/png" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" type="image/png" href="icons/favicon.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Quicksand:wght@700&display=swap">
+<script>
+  // Tema claro/oscuro: se aplica antes de pintar para evitar parpadeo
+  try { const t = localStorage.getItem("horus.tema"); if (t === "claro" || t === "oscuro") document.documentElement.dataset.theme = t === "claro" ? "light" : "dark"; } catch (e) {}
+</script>
 <link rel="stylesheet" href="css/horus.css">
 </head>
 <body>
@@ -19,8 +26,9 @@
 <!-- Inicio de sesión -->
 <section id="pantalla-login" class="centro" hidden>
   <form class="caja" id="form-login">
-    <div class="logo"><img src="icons/icon-192.png" alt="">HORUS</div>
-    <p class="muted small">Omega Eléctrica · Lafken Austral</p>
+    <div class="login-top"><button class="ghost chico btn-tema" type="button" aria-label="Cambiar a modo oscuro" title="Modo claro / oscuro"></button></div>
+    <div class="logo"><img src="icons/emblema.png" alt="">horus</div>
+    <div class="empresas login-empresas"><img src="icons/omega.png" alt="Omega Eléctrica"><img src="icons/lafken.png" alt="Lafken Austral"></div>
     <label for="login-correo">Correo</label>
     <input id="login-correo" type="email" autocomplete="username" required>
     <label for="login-clave">Contraseña</label>
@@ -33,8 +41,8 @@
 <!-- Pantalla pública (visitante con enlace / QR) -->
 <section id="pantalla-publica" hidden>
   <header class="barra"><div class="barra-top">
-    <a class="marca" href="#/"><img src="icons/icon-192.png" alt="">HORUS</a>
-    <div class="der"><a class="btn primary chico" href="#/login" id="btn-ir-login">Iniciar sesión</a></div>
+    <div class="izq"><a class="marca" href="#/"><img src="icons/emblema.png" alt="">horus</a><span class="empresas"><img src="icons/omega.png" alt="Omega Eléctrica"><img src="icons/lafken.png" alt="Lafken Austral"></span></div>
+    <div class="der"><button class="ghost chico btn-tema" type="button" aria-label="Cambiar a modo oscuro" title="Modo claro / oscuro"></button><a class="btn primary chico" href="#/login" id="btn-ir-login">Iniciar sesión</a></div>
   </div></header>
   <main id="publico"></main>
 </section>
@@ -46,8 +54,9 @@
 <div id="app" hidden>
   <header class="barra">
     <div class="barra-top">
-      <a href="#/" class="marca"><img src="icons/icon-192.png" alt="">HORUS</a>
+      <div class="izq"><a href="#/" class="marca"><img src="icons/emblema.png" alt="">horus</a><span class="empresas"><img src="icons/omega.png" alt="Omega Eléctrica"><img src="icons/lafken.png" alt="Lafken Austral"></span></div>
       <div class="der">
+        <button class="ghost chico btn-tema" type="button" aria-label="Cambiar a modo oscuro" title="Modo claro / oscuro"></button>
         <select id="sel-empresa" aria-label="Empresa" hidden></select>
         <span class="quien" id="quien"></span>
         <button class="ghost chico" id="btn-instalar" hidden>Instalar app</button>
