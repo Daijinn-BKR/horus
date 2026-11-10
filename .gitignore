@@ -1,0 +1,11 @@
+node_modules/
+dist/
+# Claves: nunca al repositorio (GitHub Actions las genera desde los secretos)
+js/config.js
+.env
+migracion/.env
+migracion/node_modules/
+sala-bombas/.env
+# Apps originales (referencia local; contienen claves)
+legado/
+.claude/

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Horus</title>
+<meta name="description" content="Sistema de gestión Omega Eléctrica · Lafken Austral">
+<meta name="theme-color" content="#1f5fbf">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Horus">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/horus.css">
+</head>
+<body>
+
+<!-- Inicio de sesión -->
+<section id="pantalla-login" class="centro" hidden>
+  <form class="caja" id="form-login">
+    <div class="logo"><img src="icons/icon-192.png" alt="">HORUS</div>
+    <p class="muted small">Omega Eléctrica · Lafken Austral</p>
+    <label for="login-correo">Correo</label>
+    <input id="login-correo" type="email" autocomplete="username" required>
+    <label for="login-clave">Contraseña</label>
+    <input id="login-clave" type="password" autocomplete="current-password" required>
+    <div class="error-txt" id="login-error"></div>
+    <button class="primary" type="submit" id="btn-entrar">Entrar</button>
+  </form>
+</section>
+
+<!-- Pantalla pública (visitante con enlace / QR) -->
+<section id="pantalla-publica" hidden>
+  <header class="barra"><div class="barra-top">
+    <a class="marca" href="#/"><img src="icons/icon-192.png" alt="">HORUS</a>
+    <div class="der"><a class="btn primary chico" href="#/login" id="btn-ir-login">Iniciar sesión</a></div>
+  </div></header>
+  <main id="publico"></main>
+</section>
+
+<!-- Mensajes (sin acceso, falta configurar, etc.) -->
+<section id="pantalla-mensaje" class="centro" hidden><div class="caja" id="mensaje"></div></section>
+
+<!-- Aplicación -->
+<div id="app" hidden>
+  <header class="barra">
+    <div class="barra-top">
+      <a href="#/" class="marca"><img src="icons/icon-192.png" alt="">HORUS</a>
+      <div class="der">
+        <select id="sel-empresa" aria-label="Empresa" hidden></select>
+        <span class="quien" id="quien"></span>
+        <button class="ghost chico" id="btn-instalar" hidden>Instalar app</button>
+        <button class="ghost chico" id="btn-salir">Salir</button>
+      </div>
+    </div>
+    <nav class="modulos" id="nav"></nav>
+  </header>
+  <main id="vista"></main>
+</div>
+
+<div id="etiqueta"></div>
+<div id="aviso" role="status" aria-live="polite"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

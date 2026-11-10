@@ -1,0 +1,47 @@
+name: Publicar Horus
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar sitio (solo los archivos de la app)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          test -n "$SUPABASE_URL" || { echo "Falta el secreto SUPABASE_URL"; exit 1; }
+          test -n "$SUPABASE_KEY" || { echo "Falta el secreto SUPABASE_KEY"; exit 1; }
+          mkdir _site
+          cp index.html sw.js manifest.webmanifest _site/
+          cp -r css js icons _site/
+          rm -f _site/js/config.js
+          # config.js = config.example.js con la URL y la clave reales
+          sed -e "s#https://TU-PROYECTO.supabase.co#${SUPABASE_URL}#" -e "s#TU-CLAVE-PUBLICABLE#${SUPABASE_KEY}#" \
+            js/config.example.js > _site/js/config.js
+          grep -q "TU-PROYECTO\|TU-CLAVE" _site/js/config.js && { echo "config.js no quedó completo"; exit 1; } || true
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4

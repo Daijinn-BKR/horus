@@ -1,0 +1,13 @@
+{
+  "name": "horus-migracion",
+  "private": true,
+  "type": "module",
+  "description": "Copia los datos de Control Equipos, Inventario y Lafken Austral a Horus",
+  "scripts": {
+    "prueba": "node migrar.mjs --prueba",
+    "migrar": "node migrar.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.45.4"
+  }
+}
