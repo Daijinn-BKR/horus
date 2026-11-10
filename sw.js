@@ -1,6 +1,6 @@
 // Service worker: permite instalar Horus como app (celular y Windows) y abrir la pantalla con mala señal.
 // Los datos (Supabase) nunca se guardan aquí: siempre se piden en línea.
-const CACHE = "horus-v3";
+const CACHE = "horus-v4";
 const BASE = [
   "./", "index.html", "css/horus.css", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png",
   "icons/emblema.png", "icons/favicon.png", "icons/omega.png", "icons/lafken.png",
