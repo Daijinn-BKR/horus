@@ -222,6 +222,39 @@ ul.eventos time { display: block; color: var(--muted); font-size: 12px; }
 
 /* ---------- Etiqueta QR: impresora térmica 58 mm ---------- */
 #etiqueta { display: none; }
+/* ---------- Buscador de Excel ---------- */
+.zona-archivo { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 0; padding: 22px 12px;
+  border: 2px dashed var(--line); border-radius: var(--radius); text-align: center; cursor: pointer; color: var(--text); }
+.zona-archivo:hover, .zona-archivo.encima { border-color: var(--accent); background: var(--info-bg); }
+.zona-archivo input { width: auto; max-width: 100%; min-height: 0; border: 0; padding: 0; background: none; margin-bottom: 6px; }
+.condicion { display: grid; grid-template-columns: minmax(120px, 1.2fr) minmax(110px, .9fr) minmax(120px, 1.5fr) auto; gap: 6px; margin-bottom: 6px; }
+@media (max-width: 560px) { .condicion { grid-template-columns: 1fr 1fr; } .condicion input { grid-column: 1 / 2; } }
+.kpis { display: flex; gap: 24px; flex-wrap: wrap; }
+.kpis > div { display: flex; flex-direction: column; }
+.kpis strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+table.tabla-excel { font-size: 14px; }
+table.tabla-excel th { cursor: pointer; white-space: nowrap; user-select: none; }
+table.tabla-excel td { white-space: nowrap; max-width: 380px; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Lista de precios ---------- */
+table.tabla-precios td.cod { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+table.tabla-precios td .chip { font-size: 12px; padding: 2px 8px; }
+/* En el celular cada producto es una tarjeta: descripción arriba, código y precio abajo */
+@media (max-width: 600px) {
+  table.tabla-precios thead { display: none; }
+  table.tabla-precios tr { display: grid; grid-template-columns: auto auto 1fr auto; grid-template-areas:
+      "desc desc desc desc" "cod tipo um pre" "var var var var"; gap: 2px 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  table.tabla-precios tr:last-child { border-bottom: 0; }
+  table.tabla-precios td { padding: 0; border: 0; }
+  table.tabla-precios td.desc { grid-area: desc; font-weight: 600; }
+  table.tabla-precios td.cod { grid-area: cod; font-size: 13px; }
+  table.tabla-precios td.tipo { grid-area: tipo; }
+  table.tabla-precios td.um { grid-area: um; font-size: 13px; color: var(--muted); }
+  table.tabla-precios td.pre { grid-area: pre; }
+  table.tabla-precios td.var { grid-area: var; text-align: right; }
+  table.tabla-precios td.var:empty { display: none; }
+}
+
 @media print {
   @page { size: 58mm 70mm; margin: 0; }
   html, body { width: 58mm; margin: 0; padding: 0; background: #fff !important; color: #000 !important; }
@@ -234,3 +267,9 @@ ul.eventos time { display: block; color: var(--muted); font-size: 12px; }
   #etiqueta .fec { font-size: 9pt; font-weight: 700; margin-top: .8mm; }
   #etiqueta .emp { font-size: 8pt; font-weight: 700; margin-top: 1mm; }
 }
+
+/* ---------- Permisos en la tabla de usuarios ---------- */
+.u-perms .perm { display: flex; align-items: center; gap: 6px; margin: 4px 0; color: var(--text); white-space: nowrap; }
+.u-perms .perm:has(input:disabled) { color: var(--muted); }
+
+table.tabla td select { min-width: 130px; }

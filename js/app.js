@@ -7,13 +7,16 @@ import * as equipos from "./equipos.js";
 import * as inventario from "./inventario.js";
 import * as servicios from "./servicios.js";
 import * as sala from "./sala.js";
+import * as bobinado from "./bobinado.js";
+import * as precios from "./precios.js";
+import * as excel from "./excel.js";
 import * as admin from "./admin.js";
 import { renderPublico } from "./publico.js";
 
 // ---------- Rutas ----------
 // modulo: requiere ese módulo activo · acceso: "staff" | "admin" (por defecto: cualquier usuario con módulo)
 const RUTAS = [
-  ...equipos.rutas, ...inventario.rutas, ...servicios.rutas, ...sala.rutas, ...admin.rutas,
+  ...equipos.rutas, ...inventario.rutas, ...servicios.rutas, ...sala.rutas, ...bobinado.rutas, ...precios.rutas, ...excel.rutas, ...admin.rutas,
 ];
 
 function mostrarPantalla(cual) {
@@ -83,6 +86,10 @@ async function router() {
     if (r.acceso === "staff" && !esStaff()) return sinAcceso();
     if (r.acceso === "cliente" && !esCliente()) return sinAcceso();
     if (r.modulo && !moduloActivo(r.modulo)) {
+      const M = MODULOS[r.modulo];
+      if (esStaff() && M.permiso && (H.empresa?.modulos || []).includes(r.modulo)) {
+        return sinAcceso(`No tienes permiso para ${M.titulo}. Pídeselo al administrador.`);
+      }
       return sinAcceso(esCliente()
         ? `No tienes habilitado el módulo ${MODULOS[r.modulo].titulo}.`
         : `El módulo ${MODULOS[r.modulo].titulo} no está habilitado para ${H.empresa?.nombre}.`);

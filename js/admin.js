@@ -1,6 +1,6 @@
 // Horus · Administración (solo rol admin)
 import {
-  sb, H, MODULOS, ROLES, $, $$, esc, aviso, msgError, vista, cargando, fmtHora, fecha,
+  sb, H, MODULOS, ROLES, PERMISOS, $, $$, esc, aviso, msgError, vista, cargando, fmtHora, fecha,
   clientesEmpresa, olvidarClientes, normalizarRut, normalizarTelefono, validarCampo,
 } from "./nucleo.js";
 
@@ -21,6 +21,7 @@ const SECCIONES = [
   ["dispositivos", "Sala de bombas", "Módulos ESP32: a qué cliente pertenecen, clave y umbrales de alarma."],
   ["empresas", "Empresas y módulos", "Qué módulos usa cada empresa."],
   ["auditoria", "Historial de cambios", "Quién creó, editó o borró cada registro."],
+  ["excel", "Buscador de Excel", "Abre planillas (compras, ventas…) y búscalas por mes, empresa o texto. No se guardan."],
 ];
 const cabecera = (titulo, extra = "") =>
   `<a href="#/admin" class="volver">← Administración</a><div class="cabecera"><h1>${titulo}</h1>${extra}</div>`;
@@ -41,6 +42,7 @@ async function usuarios() {
   ]);
   if (p.error) return vista(`<p class="vacio">${esc(msgError(p.error))}</p>`);
   const todosClientes = c.data || [];
+  const hayPermisos = p.data.some((u) => "permisos" in u);
   const nombreEmp = (id) => H.empresas.find((e) => e.id === id)?.nombre || "";
   const optEmpresas = (sel) => `<option value="">—</option>` + H.empresas.map((e) => `<option value="${e.id}"${e.id === sel ? " selected" : ""}>${esc(e.nombre)}</option>`).join("");
   const optClientes = (sel) => `<option value="">—</option>` + H.empresas.map((e) => `<optgroup label="${esc(e.nombre)}">
@@ -49,9 +51,10 @@ async function usuarios() {
 
   const v = vista(cabecera("Usuarios", `<button class="primary" id="btn-nuevo">+ Nuevo usuario</button>`) + `
     <p class="muted small">Operario: ve y edita todo lo de su empresa, pero no borra ni gestiona clientes, personal o usuarios.
+      Los <b>permisos</b> (por ejemplo Bobinado) se dan a cada operario por separado.
       Cliente: solo lectura de sus equipos, servicios y sala de bombas.</p>
     <div class="tabla-wrap"><table class="tabla">
-      <thead><tr><th>Usuario</th><th>Rol</th><th>Empresa</th><th>Cliente</th><th>Activo</th><th></th></tr></thead>
+      <thead><tr><th>Usuario</th><th>Rol</th><th>Empresa</th><th>Cliente</th><th>Permisos</th><th>Activo</th><th></th></tr></thead>
       <tbody>${p.data.map((u) => {
         const yo = u.id === H.perfil.id;
         return `<tr data-id="${u.id}">
@@ -60,6 +63,8 @@ async function usuarios() {
           <td><select class="u-rol" ${yo ? "disabled" : ""}>${optRoles(u.rol)}</select></td>
           <td><select class="u-emp" ${yo ? "disabled" : ""}>${optEmpresas(u.empresa_id)}</select></td>
           <td><select class="u-cli" ${yo ? "disabled" : ""}>${optClientes(u.cliente_id)}</select></td>
+          <td class="u-perms">${Object.entries(PERMISOS).map(([k, t]) => `<label class="perm"><input type="checkbox" class="u-perm" value="${k}"
+            ${(u.permisos || []).includes(k) || u.rol === "admin" ? "checked" : ""} ${yo ? "disabled" : ""}> ${t}</label>`).join("")}</td>
           <td><input type="checkbox" class="u-act" ${u.activo ? "checked" : ""} ${yo ? "disabled" : ""}></td>
           <td>${yo ? "" : `<div class="acciones" style="margin:0;flex-wrap:nowrap">
             <button class="chico primary u-guardar">Guardar</button>
@@ -75,7 +80,8 @@ async function usuarios() {
       <label for="n-clave" class="req">Contraseña inicial (mín. 8)</label><input id="n-clave" type="text" minlength="8" required autocomplete="new-password">
       <label for="n-rol">Rol</label><select id="n-rol">${optRoles("operario")}</select>
       <div id="n-emp-w"><label for="n-emp">Empresa</label><select id="n-emp">${optEmpresas(H.empresa?.id)}</select>
-        <div class="checks" style="margin-top:10px"><label><input type="checkbox" id="n-personal" checked> Agregar también a Personal (para asignarlo a servicios)</label></div></div>
+        <div class="checks" style="margin-top:10px"><label><input type="checkbox" id="n-personal" checked> Agregar también a Personal (para asignarlo a servicios)</label>
+          ${Object.entries(PERMISOS).map(([k, t]) => `<label><input type="checkbox" class="n-perm" value="${k}"> Puede entrar a ${t}</label>`).join("")}</div></div>
       <div id="n-cli-w" hidden><label for="n-cli">Cliente</label><select id="n-cli">${optClientes()}</select>
         <div class="ayuda">${todosClientes.length ? "El usuario verá solo los datos de este cliente." : "Aún no hay clientes: créalos primero en Administración → Clientes."}</div></div>
       <p class="muted small">Entrégale el correo y la contraseña a la persona; podrá cambiarla después.</p>
@@ -101,6 +107,11 @@ async function usuarios() {
     if (!r) return;
     $("#dlg-u").close();
     let msg = "Usuario creado.";
+    const permisos = rol === "operario" ? $$(".n-perm:checked").map((i) => i.value) : [];
+    if (permisos.length && r.id) {
+      const { error } = await sb.from("perfiles").update({ permisos }).eq("id", r.id);
+      if (error) msg = "Usuario creado, pero no se pudo guardar el permiso: " + msgError(error);
+    }
     if (rol === "operario" && $("#n-personal").checked && r.id) {
       const e = await vincularPersonal(r.id, datos.empresa_id, datos.nombre || datos.email.split("@")[0]);
       msg = e ? `Usuario creado, pero no se pudo agregar a Personal: ${e}` : "Usuario creado y agregado a Personal.";
@@ -112,7 +123,14 @@ async function usuarios() {
   for (const tr of $$("tbody tr[data-id]", v)) {
     const id = tr.dataset.id;
     const rolSel = $(".u-rol", tr), emp = $(".u-emp", tr), cli = $(".u-cli", tr);
-    const ajustar = () => { emp.disabled = rolSel.value !== "operario" || rolSel.disabled; cli.disabled = rolSel.value !== "cliente" || rolSel.disabled; };
+    const ajustar = () => {
+      emp.disabled = rolSel.value !== "operario" || rolSel.disabled; cli.disabled = rolSel.value !== "cliente" || rolSel.disabled;
+      // El admin tiene todos los permisos; el cliente ninguno
+      $$(".u-perm", tr).forEach((i) => {
+        i.disabled = rolSel.value !== "operario" || rolSel.disabled;
+        if (rolSel.value === "admin") i.checked = true; else if (rolSel.value !== "operario") i.checked = false;
+      });
+    };
     ajustar();
     rolSel.onchange = ajustar;
     $(".u-guardar", tr) && ($(".u-guardar", tr).onclick = async () => {
@@ -121,6 +139,8 @@ async function usuarios() {
         empresa_id: rolSel.value === "operario" ? emp.value || null : null,
         cliente_id: rolSel.value === "cliente" ? cli.value || null : null,
       };
+      // (si todavía no se ejecutó la versión nueva de schema.sql, la columna no existe)
+      if (hayPermisos) cambios.permisos = rolSel.value === "operario" ? $$(".u-perm:checked", tr).map((i) => i.value) : [];
       if (cambios.rol === "operario" && !cambios.empresa_id) return aviso("Elige la empresa del operario.", true);
       if (cambios.rol === "cliente" && !cambios.cliente_id) return aviso("Elige el cliente.", true);
       const { error } = await sb.from("perfiles").update(cambios).eq("id", id);

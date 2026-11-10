@@ -19,7 +19,13 @@ export const MODULOS = {
   inventario:  { titulo: "Inventario",     ruta: "#/inventario" },
   servicios:   { titulo: "Servicios",      ruta: "#/servicios" },
   sala_bombas: { titulo: "Sala de bombas", ruta: "#/sala" },
+  bobinado:    { titulo: "Bobinado",       ruta: "#/bobinado", permiso: "bobinado" },
+  precios:     { titulo: "Lista de precios", ruta: "#/precios" },
 };
+// Módulos que nunca ven los clientes
+export const SOLO_PERSONAL = ["inventario", "bobinado", "precios"];
+// Permisos especiales que el admin da a cada operario
+export const PERMISOS = { bobinado: "Bobinado" };
 export const ROLES = { admin: "Administrador", operario: "Operario", cliente: "Cliente", pendiente: "Sin acceso" };
 
 // ---------- Permisos ----------
@@ -28,14 +34,15 @@ export const esAdmin = () => rol() === "admin";
 export const esStaff = () => rol() === "admin" || rol() === "operario";
 export const esCliente = () => rol() === "cliente";
 export const puedeBorrar = () => esAdmin();
+export const tienePermiso = (p) => esAdmin() || (rol() === "operario" && (H.perfil?.permisos || []).includes(p));
 
 // Módulos que ve el usuario en la empresa activa
 export function modulosVisibles() {
   const emp = H.empresa?.modulos || [];
-  if (esStaff()) return emp.filter((m) => MODULOS[m]);
+  if (esStaff()) return emp.filter((m) => MODULOS[m] && (!MODULOS[m].permiso || tienePermiso(MODULOS[m].permiso)));
   if (esCliente()) {
     const cli = H.cliente?.modulos || [];
-    return emp.filter((m) => m !== "inventario" && cli.includes(m) && MODULOS[m]);
+    return emp.filter((m) => !SOLO_PERSONAL.includes(m) && cli.includes(m) && MODULOS[m]);
   }
   return [];
 }

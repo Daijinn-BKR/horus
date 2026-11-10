@@ -617,3 +617,190 @@ begin
     end;
   end loop;
 end $$;
+
+-- =====================================================================
+-- ============ PERMISOS ESPECIALES, BOBINADO Y LISTA DE PRECIOS ============
+-- =====================================================================
+
+-- Permisos extra por usuario (los asigna el admin). Hoy: 'bobinado'.
+alter table perfiles add column if not exists permisos text[] not null default '{}';
+
+-- Admin siempre; operario solo si el admin le dio el permiso
+create or replace function tiene_permiso(p text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select rol = 'admin' or (rol = 'operario' and p = any(permisos))
+                     from perfiles where id = auth.uid() and activo), false);
+$$;
+
+-- Módulos nuevos para Omega (solo se agregan si la empresa todavía no tiene ninguno de los dos)
+update empresas set modulos = modulos || '{bobinado,precios}'::text[]
+ where id = 'omega' and not (modulos && '{bobinado,precios}'::text[]);
+
+-- ---------- BOBINADO: registro de motores rebobinados ----------
+create table if not exists bobinados (
+  id                uuid primary key default gen_random_uuid(),
+  empresa_id        text not null references empresas(id),
+  fecha             date not null default current_date,
+  estado            text not null default 'Recibido',
+  cliente_id        uuid references clientes(id) on delete set null,
+  -- Datos de placa
+  marca             text,
+  modelo            text,
+  serie             text,
+  potencia          numeric,
+  potencia_unidad   text not null default 'kW' check (potencia_unidad in ('kW','HP')),
+  rpm               integer,
+  voltaje           text,
+  corriente         text,
+  frecuencia        integer default 50,
+  fases             integer default 3 check (fases in (1, 3)),
+  -- Datos del bobinado
+  ranuras           integer,
+  polos             integer,
+  tipo_bobinado     text,
+  paso              text,
+  vueltas           text,
+  calibre           text,
+  alambres_paralelo integer,
+  conexion          text,
+  peso_cobre        numeric,
+  observaciones     text,
+  creado_por        uuid default auth.uid() references perfiles(id) on delete set null,
+  creado_en         timestamptz not null default now(),
+  actualizado_en    timestamptz not null default now()
+);
+create index if not exists bobinados_empresa_fecha_idx on bobinados (empresa_id, fecha desc);
+
+drop trigger if exists marcar_actualizado on bobinados;
+create trigger marcar_actualizado before update on bobinados
+  for each row execute function marcar_actualizado();
+drop trigger if exists auditar on bobinados;
+create trigger auditar after insert or update or delete on bobinados
+  for each row execute function registrar_cambio();
+
+-- ---------- LISTA DE PRECIOS: una por mes; nadie puede modificar sus productos ----------
+create table if not exists listas_precios (
+  id           uuid primary key default gen_random_uuid(),
+  empresa_id   text not null references empresas(id),
+  periodo      date not null,                 -- primer día del mes
+  nombre       text not null,
+  archivo      text,
+  total        integer not null default 0,
+  tipos        text[] not null default '{}',
+  cargado_por  uuid default auth.uid() references perfiles(id) on delete set null,
+  cargado_en   timestamptz not null default now(),
+  unique (empresa_id, periodo)
+);
+create table if not exists precios (
+  id           bigint generated always as identity primary key,
+  lista_id     uuid not null references listas_precios(id) on delete cascade,
+  codigo       text,
+  tipo         text,
+  descripcion  text not null,
+  unidad       text,
+  precio       numeric
+);
+create index if not exists precios_lista_idx  on precios (lista_id, descripcion);
+create index if not exists precios_codigo_idx on precios (lista_id, codigo);
+
+drop trigger if exists auditar on listas_precios;
+create trigger auditar after insert or delete on listas_precios
+  for each row execute function registrar_cambio();
+
+-- Texto sin tildes y en minúsculas, para que "valvula" encuentre "VÁLVULA"
+create or replace function horus_normal(t text) returns text language sql immutable as $$
+  select translate(lower(coalesce(t, '')), 'áéíóúüñ', 'aeiouun');
+$$;
+
+-- Carga una lista completa de una vez (solo admin). Si algo falla, no queda nada a medias.
+create or replace function cargar_lista_precios(p_empresa text, p_periodo date, p_nombre text,
+                                                p_archivo text, p_items jsonb)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare v_id uuid; v_periodo date := date_trunc('month', p_periodo)::date;
+begin
+  if not es_admin() then
+    raise exception 'Solo un administrador puede cargar listas de precios' using errcode = '42501';
+  end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'La lista no tiene productos';
+  end if;
+  if exists (select 1 from listas_precios where empresa_id = p_empresa and periodo = v_periodo) then
+    raise exception 'Ya existe una lista de precios de ese mes. Elimínala primero si quieres reemplazarla.'
+      using errcode = 'P0001';
+  end if;
+  insert into listas_precios (empresa_id, periodo, nombre, archivo)
+  values (p_empresa, v_periodo, coalesce(nullif(trim(p_nombre), ''), to_char(v_periodo, 'MM/YYYY')), p_archivo)
+  returning id into v_id;
+  insert into precios (lista_id, codigo, tipo, descripcion, unidad, precio)
+  select v_id, nullif(trim(i->>'codigo'), ''), nullif(trim(i->>'tipo'), ''), trim(i->>'descripcion'),
+         nullif(trim(i->>'unidad'), ''), (nullif(trim(i->>'precio'), ''))::numeric
+    from jsonb_array_elements(p_items) i
+   where nullif(trim(i->>'descripcion'), '') is not null;
+  update listas_precios l set
+    total = (select count(*) from precios where lista_id = v_id),
+    tipos = coalesce((select array_agg(distinct tipo order by tipo) from precios
+                       where lista_id = v_id and tipo is not null), '{}')
+   where l.id = v_id;
+  return v_id;
+end $$;
+
+-- Búsqueda: cada palabra debe aparecer en el código o la descripción.
+-- Devuelve también el precio del mismo código en la lista del mes anterior (para ver si subió).
+create or replace function buscar_precios(p_lista uuid, p_texto text default '', p_tipo text default null,
+                                          p_orden text default 'descripcion', p_limite int default 100,
+                                          p_desde int default 0)
+returns table (codigo text, tipo text, descripcion text, unidad text, precio numeric,
+               precio_anterior numeric, total bigint)
+language sql stable set search_path = public as $$
+  with l as (select * from listas_precios where id = p_lista),
+       ant as (select a.id from listas_precios a, l
+                where a.empresa_id = l.empresa_id and a.periodo < l.periodo
+                order by a.periodo desc limit 1),
+       palabras as (select w from unnest(string_to_array(horus_normal(trim(coalesce(p_texto, ''))), ' ')) w
+                     where w <> ''),
+       r as (
+         select p.* from precios p
+          where p.lista_id = p_lista
+            and (coalesce(p_tipo, '') = '' or p.tipo = p_tipo)
+            and not exists (select 1 from palabras
+                             where horus_normal(coalesce(p.codigo, '') || ' ' || p.descripcion) not like '%' || w || '%'))
+  select r.codigo, r.tipo, r.descripcion, r.unidad, r.precio,
+         (select x.precio from precios x, ant where x.lista_id = ant.id and x.codigo = r.codigo limit 1),
+         count(*) over ()
+    from r
+   order by case when p_orden = 'precio_asc'  then r.precio end asc nulls last,
+            case when p_orden = 'precio_desc' then r.precio end desc nulls last,
+            r.descripcion
+   limit least(greatest(coalesce(p_limite, 100), 1), 500) offset greatest(coalesce(p_desde, 0), 0);
+$$;
+
+-- ---------- Seguridad ----------
+do $$
+declare t text;
+begin
+  foreach t in array array['bobinados','listas_precios','precios'] loop
+    execute format('alter table %I enable row level security', t);
+    execute (select coalesce(string_agg(format('drop policy if exists %I on %I;', policyname, t), ' '), 'select 1')
+               from pg_policies where schemaname = 'public' and tablename = t);
+  end loop;
+end $$;
+
+-- Bobinado: admin, u operario de la empresa con el permiso 'bobinado'. Solo admin borra.
+create policy "bobinados_ver"    on bobinados for select to authenticated
+  using (es_staff(empresa_id) and tiene_permiso('bobinado'));
+create policy "bobinados_crear"  on bobinados for insert to authenticated
+  with check (es_staff(empresa_id) and tiene_permiso('bobinado'));
+create policy "bobinados_editar" on bobinados for update to authenticated
+  using (es_staff(empresa_id) and tiene_permiso('bobinado'))
+  with check (es_staff(empresa_id) and tiene_permiso('bobinado'));
+create policy "bobinados_borrar" on bobinados for delete to authenticated using (es_admin());
+
+-- Lista de precios: el personal de la empresa la ve. Nadie edita productos: solo se cargan
+-- con cargar_lista_precios() (admin), y el admin puede eliminar una lista mensual completa.
+create policy "listas_ver"    on listas_precios for select to authenticated using (es_staff(empresa_id));
+create policy "listas_borrar" on listas_precios for delete to authenticated using (es_admin());
+create policy "precios_ver"   on precios for select to authenticated
+  using (exists (select 1 from listas_precios l where l.id = lista_id));
+
+revoke execute on function cargar_lista_precios(text, date, text, text, jsonb) from anon, public;
+grant  execute on function cargar_lista_precios(text, date, text, text, jsonb) to authenticated;

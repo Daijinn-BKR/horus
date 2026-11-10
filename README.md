@@ -8,6 +8,12 @@ Sistema único que reemplaza a las 4 apps anteriores:
 | **Inventario** (stock, entradas/salidas, escaneo) | Sistema Inventario | Omega |
 | **Servicios** (desratización, desinfección…) | Lafken Austral | Lafken |
 | **Sala de bombas** (ESP32: temperatura, humedad, presión, movimiento) | omega-sala-bombas | Omega |
+| **Bobinado** (ficha técnica de motores rebobinados) — solo operarios con permiso | nuevo | Omega |
+| **Lista de precios** (una por mes, solo lectura, búsqueda y variación vs. mes anterior) | nuevo | Omega |
+
+Además, el administrador tiene un **Buscador de Excel** (Administración): abre planillas de compras u otras,
+las junta y permite filtrar por mes, proveedor, texto o montos, agrupar y sumar. Los archivos se leen solo
+en el navegador: **no se suben ni se guardan**.
 
 Es una página web (HTML + JavaScript, sin frameworks) con los datos en **un solo proyecto Supabase**. Se instala como app en el **celular** (Android/iPhone) y en **Windows** (Chrome o Edge → botón “Instalar app”).
 
@@ -17,11 +23,14 @@ Las apps originales quedaron sin cambios en `legado/` como referencia (esa carpe
 
 | | Administrador | Operario | Cliente | Visitante (sin sesión) |
 |---|---|---|---|---|
-| Empresas | Ambas (selector arriba) | Solo la suya | Solo la de su cliente | — |
+| Empresas | Ambas (clic en el logo, arriba) | Solo la suya | Solo la de su cliente | — |
 | Ver | Todo | Todo lo de su empresa | Sus equipos, servicios y sala de bombas (lo que el admin le habilite) | Solo la ficha del QR |
 | Crear / editar | Todo | Equipos, fotos, productos, movimientos, servicios | Nada | Nada |
 | Borrar | Sí | **No** | No | No |
 | Gestionar clientes, personal, usuarios, módulos ESP32 | Sí | No (solo los elige en los formularios) | No | No |
+| Bobinado | Sí | Solo si el admin le da el permiso (Usuarios → Permisos) | No | No |
+| Lista de precios | Ver y cargar/eliminar listas | Solo ver | No | No |
+| Buscador de Excel | Sí | No | No | No |
 | Historial de cambios | Sí | No | No | No |
 
 - **Ficha limitada** (cliente y visitante): empresa, ID, cliente, tipo de motor, voltaje, mantenimiento, estado y fechas. **No** muestra mediciones, notas, proceso, encargados, fotos ni videos. Se cambia en la función `equipo_limitado` de `supabase/schema.sql`.
@@ -97,7 +106,8 @@ Umbrales de alarma: se editan por módulo en Administración → Sala de bombas 
 | `index.html`, `css/horus.css` | Pantalla y estilos |
 | `js/app.js` | Sesión, roles, navegación |
 | `js/nucleo.js` | Conexión a Supabase, permisos, utilidades |
-| `js/equipos.js`, `inventario.js`, `servicios.js`, `sala.js` | Cada módulo |
+| `js/equipos.js`, `inventario.js`, `servicios.js`, `sala.js`, `bobinado.js`, `precios.js` | Cada módulo |
+| `js/excel.js` | Buscador de Excel (y lectura de Excel para la lista de precios) |
 | `js/admin.js` | Usuarios, clientes, personal, módulos ESP32, empresas, historial |
 | `js/publico.js` | Ficha limitada (QR) |
 | `supabase/schema.sql` | Tablas, permisos por rol, funciones, historial de cambios |
