@@ -10,13 +10,14 @@ import * as sala from "./sala.js";
 import * as bobinado from "./bobinado.js";
 import * as precios from "./precios.js";
 import * as excel from "./excel.js";
+import * as ordenes from "./ordenes.js";
 import * as admin from "./admin.js";
 import { renderPublico } from "./publico.js";
 
 // ---------- Rutas ----------
 // modulo: requiere ese módulo activo · acceso: "staff" | "admin" (por defecto: cualquier usuario con módulo)
 const RUTAS = [
-  ...equipos.rutas, ...inventario.rutas, ...servicios.rutas, ...sala.rutas, ...bobinado.rutas, ...precios.rutas, ...excel.rutas, ...admin.rutas,
+  ...equipos.rutas, ...inventario.rutas, ...servicios.rutas, ...sala.rutas, ...bobinado.rutas, ...precios.rutas, ...ordenes.rutas, ...excel.rutas, ...admin.rutas,
 ];
 
 function mostrarPantalla(cual) {
@@ -43,7 +44,7 @@ async function router() {
     if (!H.usuario) { mostrarPantalla("pantalla-publica"); return renderPublico(id); }
     if (!H.perfil) return;
     // Operario de una empresa sin módulo Equipos (ej. Lafken): ve la ficha limitada, como un visitante
-    if (rol() === "operario" && !moduloActivo("equipos")) {
+    if (esStaff() && !esAdmin() && !moduloActivo("equipos")) {
       mostrarPantalla("app"); pintarNav();
       return renderPublico(id, $("#vista"));
     }

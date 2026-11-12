@@ -10,6 +10,10 @@ Sistema único que reemplaza a las 4 apps anteriores:
 | **Sala de bombas** (ESP32: temperatura, humedad, presión, movimiento) | omega-sala-bombas | Omega |
 | **Bobinado** (ficha técnica de motores rebobinados) — solo operarios con permiso | nuevo | Omega |
 | **Lista de precios** (una por mes, solo lectura, búsqueda y variación vs. mes anterior) | nuevo | Omega |
+| **Órdenes de trabajo** (el jefe eléctrico asigna trabajos, el personal los termina y el jefe los verifica) | nuevo | Omega |
+
+En **Equipos**, cada ficha tiene **Mantención externa**: registra cuando un equipo sale a otro taller (destino,
+guía, retorno estimado) y cuando vuelve. La lista de equipos avisa cuántos están fuera y cuáles están atrasados.
 
 Además, el administrador tiene un **Buscador de Excel** (Administración): abre planillas de compras u otras,
 las junta y permite filtrar por mes, proveedor, texto o montos, agrupar y sumar. Los archivos se leen solo
@@ -21,20 +25,26 @@ Las apps originales quedaron sin cambios en `legado/` como referencia (esa carpe
 
 ## Tipos de usuario
 
-| | Administrador | Operario | Cliente | Visitante (sin sesión) |
-|---|---|---|---|---|
-| Empresas | Ambas (clic en el logo, arriba) | Solo la suya | Solo la de su cliente | — |
-| Ver | Todo | Todo lo de su empresa | Sus equipos, servicios y sala de bombas (lo que el admin le habilite) | Solo la ficha del QR |
-| Crear / editar | Todo | Equipos, fotos, productos, movimientos, servicios | Nada | Nada |
-| Borrar | Sí | **No** | No | No |
-| Gestionar clientes, personal, usuarios, módulos ESP32 | Sí | No (solo los elige en los formularios) | No | No |
-| Bobinado | Sí | Solo si el admin le da el permiso (Usuarios → Permisos) | No | No |
-| Lista de precios | Ver y cargar/eliminar listas | Solo ver | No | No |
-| Buscador de Excel | Sí | No | No | No |
-| Historial de cambios | Sí | No | No | No |
+| | Administrador | Jefe eléctrico | Operario | Cliente | Visitante (sin sesión) |
+|---|---|---|---|---|---|
+| Empresas | Ambas (clic en el logo, arriba) | Solo la suya | Solo la suya | Solo la de su cliente | — |
+| Ver | Todo | Todo lo de su empresa | Todo lo de su empresa | Sus equipos, servicios y sala de bombas (lo que el admin le habilite) | Solo la ficha del QR |
+| Crear / editar | Todo | Lo mismo que un operario | Equipos, fotos, productos, movimientos, servicios, mantención externa | Nada | Nada |
+| Órdenes de trabajo | Todo | Crear, editar, asignar personal y **verificar** | Iniciar y terminar **las suyas** (con informe) | No | No |
+| Borrar | Sí | **No** | **No** | No | No |
+| Gestionar clientes, personal, usuarios, módulos ESP32 | Sí | No | No (solo los elige en los formularios) | No | No |
+| Bobinado | Sí | Solo con permiso | Solo si el admin le da el permiso (Usuarios → Permisos) | No | No |
+| Lista de precios | Ver y cargar/eliminar listas | Solo ver | Solo ver | No | No |
+| Buscador de Excel | Sí | No | No | No | No |
+| Historial de cambios | Sí | No | No | No | No |
+
+- **Órdenes de trabajo**: Asignada → En curso → Terminada (quien la hizo escribe el informe) → **Verificada** por el
+  jefe o un admin. Si el jefe la devuelve, vuelve a “En curso” con el motivo. Para que alguien pueda iniciar y
+  terminar órdenes, su cuenta debe estar vinculada en **Administración → Personal**. Los tipos de orden son
+  provisorios: se cambian en `tipos_orden` de `js/config.example.js`.
 
 - **Ficha limitada** (cliente y visitante): empresa, ID, cliente, tipo de motor, voltaje, mantenimiento, estado y fechas. **No** muestra mediciones, notas, proceso, encargados, fotos ni videos. Se cambia en la función `equipo_limitado` de `supabase/schema.sql`.
-- Un operario de Lafken que escanea un QR de Omega ve la ficha limitada.
+- Un operario o jefe de Lafken que escanea un QR de Omega ve la ficha limitada.
 - Un usuario nuevo queda **“Sin acceso”** hasta que el administrador le asigna un rol.
 - Los permisos los aplica la base de datos (Row Level Security), no solo la pantalla: aunque alguien modifique la página, no puede ver ni tocar lo que no le corresponde.
 
@@ -121,7 +131,7 @@ Umbrales de alarma: se editan por módulo en Administración → Sala de bombas 
 | `index.html`, `css/horus.css` | Pantalla y estilos |
 | `js/app.js` | Sesión, roles, navegación |
 | `js/nucleo.js` | Conexión a Supabase, permisos, utilidades |
-| `js/equipos.js`, `inventario.js`, `servicios.js`, `sala.js`, `bobinado.js`, `precios.js` | Cada módulo |
+| `js/equipos.js`, `inventario.js`, `servicios.js`, `sala.js`, `bobinado.js`, `precios.js`, `ordenes.js` | Cada módulo |
 | `js/excel.js` | Buscador de Excel (y lectura de Excel para la lista de precios) |
 | `js/admin.js` | Usuarios, clientes, personal, módulos ESP32, empresas, historial |
 | `js/publico.js` | Ficha limitada (QR) |

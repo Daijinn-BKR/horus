@@ -1,6 +1,6 @@
 // Horus · Administración (solo rol admin)
 import {
-  sb, H, MODULOS, ROLES, PERMISOS, $, $$, esc, aviso, msgError, vista, cargando, fmtHora, fecha,
+  sb, H, MODULOS, ROLES, ROLES_EMPRESA, PERMISOS, $, $$, esc, aviso, msgError, vista, cargando, fmtHora, fecha,
   clientesEmpresa, olvidarClientes, normalizarRut, normalizarTelefono, validarCampo,
 } from "./nucleo.js";
 
@@ -15,9 +15,9 @@ export const rutas = [
 ];
 
 const SECCIONES = [
-  ["usuarios", "Usuarios", "Crear cuentas y asignar rol: administrador, operario o cliente."],
+  ["usuarios", "Usuarios", "Crear cuentas y asignar rol: administrador, jefe eléctrico, operario o cliente."],
   ["clientes", "Clientes", "Clientes de la empresa activa y qué módulos puede ver cada uno."],
-  ["personal", "Personal", "Trabajadores que se asignan a los servicios."],
+  ["personal", "Personal", "Trabajadores que se asignan a los servicios y a las órdenes de trabajo."],
   ["dispositivos", "Sala de bombas", "Módulos ESP32: a qué cliente pertenecen, clave y umbrales de alarma."],
   ["empresas", "Empresas y módulos", "Qué módulos usa cada empresa."],
   ["auditoria", "Historial de cambios", "Quién creó, editó o borró cada registro."],
@@ -51,7 +51,8 @@ async function usuarios() {
 
   const v = vista(cabecera("Usuarios", `<button class="primary" id="btn-nuevo">+ Nuevo usuario</button>`) + `
     <p class="muted small">Operario: ve y edita todo lo de su empresa, pero no borra ni gestiona clientes, personal o usuarios.
-      Los <b>permisos</b> (por ejemplo Bobinado) se dan a cada operario por separado.
+      Jefe eléctrico: lo mismo que un operario, y además crea órdenes de trabajo, asigna personal y verifica los trabajos terminados (tampoco borra).
+      Los <b>permisos</b> (por ejemplo Bobinado) se dan a cada operario o jefe por separado.
       Cliente: solo lectura de sus equipos, servicios y sala de bombas.</p>
     <div class="tabla-wrap"><table class="tabla">
       <thead><tr><th>Usuario</th><th>Rol</th><th>Empresa</th><th>Cliente</th><th>Permisos</th><th>Activo</th><th></th></tr></thead>
@@ -88,7 +89,7 @@ async function usuarios() {
       <div class="pie"><button type="button" data-cerrar>Cancelar</button><button class="primary" type="submit">Crear</button></div>
     </form></dialog>`, true);
 
-  const sync = (rolSel, empW, cliW) => { empW.hidden = rolSel.value !== "operario"; cliW.hidden = rolSel.value !== "cliente"; };
+  const sync = (rolSel, empW, cliW) => { empW.hidden = !ROLES_EMPRESA.includes(rolSel.value); cliW.hidden = rolSel.value !== "cliente"; };
   sync($("#n-rol"), $("#n-emp-w"), $("#n-cli-w"));
   $("#n-rol").onchange = () => sync($("#n-rol"), $("#n-emp-w"), $("#n-cli-w"));
   $("#btn-nuevo").onclick = () => $("#dlg-u").showModal();
@@ -99,20 +100,23 @@ async function usuarios() {
     const rol = $("#n-rol").value;
     const datos = {
       accion: "crear", email: $("#n-email").value.trim(), password: $("#n-clave").value, nombre: $("#n-nombre").value.trim() || null,
-      rol, empresa_id: rol === "operario" ? $("#n-emp").value || null : null, cliente_id: rol === "cliente" ? $("#n-cli").value || null : null,
+      // El jefe se crea como operario y luego se sube a jefe (así funciona aunque la función "usuarios"
+      // instalada en Supabase sea anterior al rol jefe)
+      rol: rol === "jefe" ? "operario" : rol,
+      empresa_id: ROLES_EMPRESA.includes(rol) ? $("#n-emp").value || null : null, cliente_id: rol === "cliente" ? $("#n-cli").value || null : null,
     };
-    if (rol === "operario" && !datos.empresa_id) return aviso("Elige la empresa del operario.", true);
+    if (ROLES_EMPRESA.includes(rol) && !datos.empresa_id) return aviso("Elige la empresa.", true);
     if (rol === "cliente" && !datos.cliente_id) return aviso("Elige el cliente.", true);
     const r = await funcionUsuarios(datos);
     if (!r) return;
     $("#dlg-u").close();
     let msg = "Usuario creado.";
-    const permisos = rol === "operario" ? $$(".n-perm:checked").map((i) => i.value) : [];
-    if (permisos.length && r.id) {
-      const { error } = await sb.from("perfiles").update({ permisos }).eq("id", r.id);
-      if (error) msg = "Usuario creado, pero no se pudo guardar el permiso: " + msgError(error);
+    const permisos = ROLES_EMPRESA.includes(rol) ? $$(".n-perm:checked").map((i) => i.value) : [];
+    if ((permisos.length || rol === "jefe") && r.id) {
+      const { error } = await sb.from("perfiles").update({ permisos, rol }).eq("id", r.id);
+      if (error) msg = "Usuario creado, pero no se pudo guardar el rol o el permiso: " + msgError(error);
     }
-    if (rol === "operario" && $("#n-personal").checked && r.id) {
+    if (ROLES_EMPRESA.includes(rol) && $("#n-personal").checked && r.id) {
       const e = await vincularPersonal(r.id, datos.empresa_id, datos.nombre || datos.email.split("@")[0]);
       msg = e ? `Usuario creado, pero no se pudo agregar a Personal: ${e}` : "Usuario creado y agregado a Personal.";
     }
@@ -124,11 +128,12 @@ async function usuarios() {
     const id = tr.dataset.id;
     const rolSel = $(".u-rol", tr), emp = $(".u-emp", tr), cli = $(".u-cli", tr);
     const ajustar = () => {
-      emp.disabled = rolSel.value !== "operario" || rolSel.disabled; cli.disabled = rolSel.value !== "cliente" || rolSel.disabled;
+      const deEmpresa = ROLES_EMPRESA.includes(rolSel.value);
+      emp.disabled = !deEmpresa || rolSel.disabled; cli.disabled = rolSel.value !== "cliente" || rolSel.disabled;
       // El admin tiene todos los permisos; el cliente ninguno
       $$(".u-perm", tr).forEach((i) => {
-        i.disabled = rolSel.value !== "operario" || rolSel.disabled;
-        if (rolSel.value === "admin") i.checked = true; else if (rolSel.value !== "operario") i.checked = false;
+        i.disabled = !deEmpresa || rolSel.disabled;
+        if (rolSel.value === "admin") i.checked = true; else if (!deEmpresa) i.checked = false;
       });
     };
     ajustar();
@@ -136,12 +141,12 @@ async function usuarios() {
     $(".u-guardar", tr) && ($(".u-guardar", tr).onclick = async () => {
       const cambios = {
         nombre: $(".u-nombre", tr).value.trim() || null, rol: rolSel.value, activo: $(".u-act", tr).checked,
-        empresa_id: rolSel.value === "operario" ? emp.value || null : null,
+        empresa_id: ROLES_EMPRESA.includes(rolSel.value) ? emp.value || null : null,
         cliente_id: rolSel.value === "cliente" ? cli.value || null : null,
       };
       // (si todavía no se ejecutó la versión nueva de schema.sql, la columna no existe)
-      if (hayPermisos) cambios.permisos = rolSel.value === "operario" ? $$(".u-perm:checked", tr).map((i) => i.value) : [];
-      if (cambios.rol === "operario" && !cambios.empresa_id) return aviso("Elige la empresa del operario.", true);
+      if (hayPermisos) cambios.permisos = ROLES_EMPRESA.includes(rolSel.value) ? $$(".u-perm:checked", tr).map((i) => i.value) : [];
+      if (ROLES_EMPRESA.includes(cambios.rol) && !cambios.empresa_id) return aviso("Elige la empresa.", true);
       if (cambios.rol === "cliente" && !cambios.cliente_id) return aviso("Elige el cliente.", true);
       const { error } = await sb.from("perfiles").update(cambios).eq("id", id);
       if (error) return aviso(msgError(error), true);
@@ -293,10 +298,10 @@ async function personal() {
   cargando();
   const [{ data, error }, perf] = await Promise.all([
     sb.from("personal").select("*").eq("empresa_id", H.empresa.id).order("nombre"),
-    sb.from("perfiles").select("id, email, nombre, rol, empresa_id").in("rol", ["admin", "operario"]).order("email"),
+    sb.from("perfiles").select("id, email, nombre, rol, empresa_id").in("rol", ["admin", "jefe", "operario"]).order("email"),
   ]);
   if (error) return vista(`<p class="vacio">${esc(msgError(error))}</p>`);
-  // Cuentas que se pueden vincular: operarios de esta empresa y administradores
+  // Cuentas que se pueden vincular: operarios y jefes de esta empresa, y administradores
   const cuentas = (perf.data || []).filter((u) => u.rol === "admin" || u.empresa_id === H.empresa.id);
   const tomadas = new Set(data.map((p) => p.usuario_id).filter(Boolean));
   const optCuentas = (p) => `<option value="">Sin cuenta</option>` + cuentas

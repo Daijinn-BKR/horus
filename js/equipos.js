@@ -1,6 +1,6 @@
 // Horus · Equipos (motores y bombas): fichas, mediciones, fotos/videos y QR
 import {
-  sb, H, OPC, $, $$, esc, aviso, msgError, vista, cargando, alSalirDeVista, fecha, fechaHora,
+  sb, H, OPC, $, $$, esc, aviso, msgError, vista, cargando, alSalirDeVista, fecha, fechaHora, hoy,
   chipEstado, unicos, linkEquipo, qrUrl, descargarCSV, clientesEmpresa, esAdmin, esStaff, esCliente,
   abrirLector, cerrarLector,
 } from "./nucleo.js";
@@ -70,8 +70,10 @@ async function lista() {
         ${clientes.map((c) => `<option value="${c.id}">${esc(c.nombre)}</option>`).join("")}</select>
       <select id="f-estado" aria-label="Estado"></select>
     </div>
+    <div id="fuera"></div>
     <p id="conteo" class="muted small"></p>
     <div id="lista" class="lista"></div>`);
+  pintarFuera();
   const estados = () => {
     const sel = $("#f-estado"), v = sel.value;
     sel.innerHTML = `<option value="">Todos los estados</option>` + opciones("estado").map((o) => `<option>${esc(o)}</option>`).join("");
@@ -159,6 +161,8 @@ async function ficha(id, refresco = false) {
       </div>
     </div>
 
+    <div class="panel" id="mext"><h2>Mantención externa</h2><p class="muted small" style="margin:0">Cargando…</p></div>
+
     <div class="panel"><h2>Datos</h2><dl class="datos">
       <dt>Cliente</dt><dd>${esc(nombreCliente(e))}</dd>${GENERAL.map((c) => filaDato(c, e)).join("")}</dl></div>
     <div class="panel"><h2>Mediciones</h2><div class="medidas">
@@ -187,6 +191,7 @@ async function ficha(id, refresco = false) {
   $("#in-fotos", v).onchange = (ev) => subirArchivos(e, ev.target.files, "foto");
   $("#in-videos", v).onchange = (ev) => subirArchivos(e, ev.target.files, "video");
   cargarMedios(e.id);
+  cargarExterna(e);
 
   if (!refresco) {
     const canal = sb.channel("equipo-" + e.id)
@@ -195,6 +200,113 @@ async function ficha(id, refresco = false) {
       .subscribe();
     alSalirDeVista(() => sb.removeChannel(canal));
   }
+}
+
+// ---------- Mantención externa: equipos que salen del taller y vuelven ----------
+const diasFuera = (m) =>
+  Math.max(0, Math.round((new Date((m.fecha_retorno || hoy()) + "T12:00:00") - new Date(m.fecha_salida + "T12:00:00")) / 864e5));
+const txtDias = (n) => `${n} día${n === 1 ? "" : "s"}`;
+const vencido = (m) => !m.fecha_retorno && m.fecha_estimada && m.fecha_estimada < hoy();
+
+// Aviso en la lista: cuántos equipos están fuera y cuáles pasaron la fecha estimada de retorno
+async function pintarFuera() {
+  const { data, error } = await sb.from("mantenciones_externas").select("equipo_id, destino, fecha_salida, fecha_estimada, fecha_retorno")
+    .eq("empresa_id", H.empresa.id).is("fecha_retorno", null).order("fecha_salida");
+  const c = $("#fuera");
+  if (!c || error || !data.length) return; // sin la versión nueva de schema.sql la tabla no existe: no se muestra nada
+  const atrasados = data.filter(vencido).length;
+  c.innerHTML = `<details class="panel" style="border-color:var(--warn)"><summary><strong>${data.length} equipo${data.length === 1 ? "" : "s"} en mantención externa</strong>
+      ${atrasados ? ` <span class="chip mal">${atrasados} atrasado${atrasados === 1 ? "" : "s"}</span>` : ""}</summary>
+    <div class="lista" style="margin-top:8px">${data.map((m) => `
+      <a class="tarjeta" href="#/equipos/${encodeURIComponent(m.equipo_id)}">
+        <div class="t-top"><strong>ID ${esc(m.equipo_id)} · ${esc(m.destino)}</strong>${vencido(m) ? `<span class="chip mal">Atrasado</span>` : ""}</div>
+        <div class="muted small">Salió ${fecha(m.fecha_salida)} · ${txtDias(diasFuera(m))} fuera${m.fecha_estimada ? ` · Retorno estimado ${fecha(m.fecha_estimada)}` : ""}</div>
+      </a>`).join("")}</div></details>`;
+}
+
+async function cargarExterna(e) {
+  const c = $("#mext");
+  if (!c) return;
+  const { data, error } = await sb.from("mantenciones_externas").select("*").eq("equipo_id", e.id).order("fecha_salida", { ascending: false });
+  if (error) { c.hidden = true; return; } // tabla aún no creada en Supabase
+  const abierta = data.find((m) => !m.fecha_retorno);
+  const pasadas = data.filter((m) => m.fecha_retorno);
+  const estadosRetorno = unicos([...(OPC.estado || []), "En mantención", "Terminado", "Entregado"]).filter((x) => x !== "En mantención externa");
+  c.innerHTML = `<h2>Mantención externa</h2>
+    ${abierta ? `
+      <div class="t-top"><strong>Fuera del taller: ${esc(abierta.destino)}</strong>
+        ${vencido(abierta) ? `<span class="chip mal">Atrasado</span>` : `<span class="chip warn">Fuera</span>`}</div>
+      <dl class="datos">
+        <dt>Salió</dt><dd>${fecha(abierta.fecha_salida)} (${txtDias(diasFuera(abierta))})</dd>
+        <dt>Retorno estimado</dt><dd>${abierta.fecha_estimada ? fecha(abierta.fecha_estimada) : '<span class="muted">—</span>'}</dd>
+        ${abierta.contacto ? `<dt>Contacto</dt><dd>${esc(abierta.contacto)}</dd>` : ""}
+        ${abierta.guia_salida ? `<dt>Guía de despacho</dt><dd>${esc(abierta.guia_salida)}</dd>` : ""}
+        ${abierta.motivo ? `<dt>Motivo</dt><dd style="white-space:pre-wrap">${esc(abierta.motivo)}</dd>` : ""}
+      </dl>
+      <div class="botones"><button type="button" class="primary" id="mx-retorno">Registrar retorno</button></div>`
+    : `<p class="muted small" style="margin:0 0 8px">El equipo está en el taller.</p>
+       <div class="botones"><button type="button" id="mx-enviar">Enviar a mantención externa</button></div>`}
+    ${pasadas.length ? `<details style="margin-top:10px"><summary class="small">Envíos anteriores (${pasadas.length})</summary>
+      ${pasadas.map((m) => `<div style="padding:6px 0;border-top:1px solid var(--line)">
+        <strong>${esc(m.destino)}</strong> <span class="muted small">· ${fecha(m.fecha_salida)} → ${fecha(m.fecha_retorno)} (${txtDias(diasFuera(m))})</span>
+        ${m.motivo ? `<div class="small">Motivo: ${esc(m.motivo)}</div>` : ""}
+        ${m.notas_retorno ? `<div class="small">Al volver: ${esc(m.notas_retorno)}</div>` : ""}</div>`).join("")}</details>` : ""}
+
+    <dialog id="dlg-mx-env"><form method="dialog" id="form-mx-env">
+      <h2>Enviar a mantención externa</h2>
+      <label for="mx-dest" class="req">¿A dónde va?</label><input id="mx-dest" placeholder="Taller o empresa" required>
+      <label for="mx-cont">Contacto</label><input id="mx-cont" placeholder="Nombre / teléfono">
+      <div class="grid2">
+        <div><label for="mx-sal" class="req">Fecha de salida</label><input id="mx-sal" type="date" value="${hoy()}"></div>
+        <div><label for="mx-est">Retorno estimado</label><input id="mx-est" type="date"></div>
+      </div>
+      <label for="mx-guia">N° guía de despacho</label><input id="mx-guia">
+      <label for="mx-mot">Motivo / qué se le hará</label><textarea id="mx-mot" rows="3"></textarea>
+      <p class="muted small">El equipo quedará en estado "En mantención externa".</p>
+      <div class="pie"><button type="button" data-cerrar>Cancelar</button><button class="primary" type="submit">Registrar salida</button></div>
+    </form></dialog>
+    <dialog id="dlg-mx-ret"><form method="dialog" id="form-mx-ret">
+      <h2>Registrar retorno</h2>
+      <label for="mx-fret" class="req">Fecha de retorno</label><input id="mx-fret" type="date" value="${hoy()}">
+      <label for="mx-gret">N° guía de retorno</label><input id="mx-gret">
+      <label for="mx-nret">¿Qué se le hizo? / observaciones</label><textarea id="mx-nret" rows="3"></textarea>
+      <label for="mx-eret">Estado del equipo al volver</label><select id="mx-eret">
+        ${estadosRetorno.map((x) => `<option${x === "En mantención" ? " selected" : ""}>${esc(x)}</option>`).join("")}</select>
+      <div class="pie"><button type="button" data-cerrar>Cancelar</button><button class="primary" type="submit">Registrar retorno</button></div>
+    </form></dialog>`;
+  $$("[data-cerrar]", c).forEach((b) => (b.onclick = () => b.closest("dialog").close()));
+  if ($("#mx-enviar", c)) $("#mx-enviar", c).onclick = () => $("#dlg-mx-env").showModal();
+  if ($("#mx-retorno", c)) $("#mx-retorno", c).onclick = () => $("#dlg-mx-ret").showModal();
+  $("#form-mx-env", c).onsubmit = async (ev) => {
+    ev.preventDefault();
+    const destino = $("#mx-dest").value.trim(), sal = $("#mx-sal").value, est = $("#mx-est").value;
+    if (!destino) return aviso("Indica a dónde va el equipo.", true);
+    if (!sal) return aviso("Indica la fecha de salida.", true);
+    if (est && est < sal) return aviso("El retorno estimado no puede ser antes de la salida.", true);
+    const { error } = await sb.from("mantenciones_externas").insert({
+      equipo_id: e.id, empresa_id: e.empresa_id, destino, contacto: $("#mx-cont").value.trim() || null,
+      fecha_salida: sal, fecha_estimada: est || null, guia_salida: $("#mx-guia").value.trim() || null,
+      motivo: $("#mx-mot").value.trim() || null,
+    });
+    if (error) return aviso(msgError(error), true);
+    $("#dlg-mx-env").close();
+    aviso("Salida registrada.");
+    ficha(e.id, true);
+  };
+  $("#form-mx-ret", c).onsubmit = async (ev) => {
+    ev.preventDefault();
+    const fret = $("#mx-fret").value;
+    if (!fret) return aviso("Indica la fecha de retorno.", true);
+    if (fret < abierta.fecha_salida) return aviso("La fecha de retorno es anterior a la salida.", true);
+    const { error } = await sb.from("mantenciones_externas").update({
+      fecha_retorno: fret, guia_retorno: $("#mx-gret").value.trim() || null,
+      notas_retorno: $("#mx-nret").value.trim() || null, estado_retorno: $("#mx-eret").value,
+    }).eq("id", abierta.id);
+    if (error) return aviso(msgError(error), true);
+    $("#dlg-mx-ret").close();
+    aviso("Retorno registrado.");
+    ficha(e.id, true);
+  };
 }
 
 async function cargarMedios(id) {

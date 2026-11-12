@@ -21,20 +21,25 @@ export const MODULOS = {
   sala_bombas: { titulo: "Sala de bombas", ruta: "#/sala" },
   bobinado:    { titulo: "Bobinado",       ruta: "#/bobinado", permiso: "bobinado" },
   precios:     { titulo: "Lista de precios", ruta: "#/precios" },
+  ordenes:     { titulo: "Órdenes de trabajo", ruta: "#/ordenes" },
 };
 // Módulos que nunca ven los clientes
-export const SOLO_PERSONAL = ["inventario", "bobinado", "precios"];
+export const SOLO_PERSONAL = ["inventario", "bobinado", "precios", "ordenes"];
 // Permisos especiales que el admin da a cada operario
 export const PERMISOS = { bobinado: "Bobinado" };
-export const ROLES = { admin: "Administrador", operario: "Operario", cliente: "Cliente", pendiente: "Sin acceso" };
+export const ROLES = { admin: "Administrador", jefe: "Jefe eléctrico", operario: "Operario", cliente: "Cliente", pendiente: "Sin acceso" };
+// Roles que pertenecen a una empresa (necesitan empresa asignada y pueden tener permisos)
+export const ROLES_EMPRESA = ["jefe", "operario"];
 
 // ---------- Permisos ----------
 export const rol = () => H.perfil?.rol;
 export const esAdmin = () => rol() === "admin";
-export const esStaff = () => rol() === "admin" || rol() === "operario";
+export const esStaff = () => rol() === "admin" || ROLES_EMPRESA.includes(rol());
+// Jefe eléctrico (o admin): crea órdenes de trabajo, asigna personal y verifica trabajos. No borra.
+export const esJefe = () => rol() === "admin" || rol() === "jefe";
 export const esCliente = () => rol() === "cliente";
 export const puedeBorrar = () => esAdmin();
-export const tienePermiso = (p) => esAdmin() || (rol() === "operario" && (H.perfil?.permisos || []).includes(p));
+export const tienePermiso = (p) => esAdmin() || (ROLES_EMPRESA.includes(rol()) && (H.perfil?.permisos || []).includes(p));
 
 // Módulos que ve el usuario en la empresa activa
 export function modulosVisibles() {
@@ -107,6 +112,7 @@ export const unicos = (l) => [...new Set(l.filter((v) => v != null && String(v).
 export function claseEstado(e) {
   const s = String(e || "").toLowerCase();
   if (!s) return "";
+  if (s.includes("extern")) return "warn";
   if (s.includes("pend")) return "pendiente";
   if (s.includes("termin") || s.includes("entreg") || s.includes("list")) return "listo";
   return "proceso";

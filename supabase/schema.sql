@@ -4,6 +4,9 @@
 --
 --  Roles:
 --    admin     → acceso total a ambas empresas (crear, editar, borrar, usuarios)
+--    jefe      → jefe eléctrico: lo mismo que un operario de SU empresa, y además crea
+--                órdenes de trabajo, asigna personal y verifica los trabajos terminados.
+--                No borra nada.
 --    operario  → todo dentro de SU empresa, pero sin borrar y sin editar
 --                clientes, personal, usuarios ni dispositivos
 --    cliente   → solo lectura de SUS equipos, servicios y sala de bombas
@@ -73,12 +76,17 @@ create table if not exists perfiles (
   email       text,
   nombre      text,
   rol         text not null default 'pendiente'
-              check (rol in ('admin','operario','cliente','pendiente')),
+              check (rol in ('admin','jefe','operario','cliente','pendiente')),
   empresa_id  text references empresas(id),
   cliente_id  uuid references clientes(id) on delete set null,
   activo      boolean not null default true,
   creado_en   timestamptz not null default now()
 );
+
+-- Rol "jefe" (jefe eléctrico) en bases creadas antes de que existiera
+alter table perfiles drop constraint if exists perfiles_rol_check;
+alter table perfiles add constraint perfiles_rol_check
+  check (rol in ('admin','jefe','operario','cliente','pendiente'));
 
 -- Coherencia: el operario necesita empresa; el cliente necesita cliente (y hereda su empresa)
 create or replace function perfiles_coherencia() returns trigger language plpgsql as $$
@@ -86,8 +94,8 @@ begin
   if new.rol = 'cliente' then
     if new.cliente_id is null then raise exception 'Un usuario cliente debe tener un cliente asignado'; end if;
     select empresa_id into new.empresa_id from clientes where id = new.cliente_id;
-  elsif new.rol = 'operario' then
-    if new.empresa_id is null then raise exception 'Un operario debe tener una empresa asignada'; end if;
+  elsif new.rol in ('operario','jefe') then
+    if new.empresa_id is null then raise exception 'Un operario o jefe debe tener una empresa asignada'; end if;
     new.cliente_id := null;
   elsif new.rol = 'admin' then
     new.cliente_id := null;
@@ -132,10 +140,15 @@ create or replace function es_admin() returns boolean
 language sql stable security definer set search_path = public as $$
   select coalesce(mi_rol() = 'admin', false);
 $$;
--- Admin, u operario de esa empresa
+-- Admin, u operario/jefe de esa empresa
 create or replace function es_staff(p_empresa text) returns boolean
 language sql stable security definer set search_path = public as $$
-  select coalesce(mi_rol() = 'admin' or (mi_rol() = 'operario' and mi_empresa() = p_empresa), false);
+  select coalesce(mi_rol() = 'admin' or (mi_rol() in ('operario','jefe') and mi_empresa() = p_empresa), false);
+$$;
+-- Admin, o jefe de esa empresa (crea órdenes de trabajo y verifica trabajos)
+create or replace function es_jefe(p_empresa text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce(mi_rol() = 'admin' or (mi_rol() = 'jefe' and mi_empresa() = p_empresa), false);
 $$;
 -- Cliente con sesión, dueño del registro y con el módulo habilitado
 create or replace function cliente_ve(p_cliente uuid, p_modulo text) returns boolean
@@ -625,10 +638,10 @@ end $$;
 -- Permisos extra por usuario (los asigna el admin). Hoy: 'bobinado'.
 alter table perfiles add column if not exists permisos text[] not null default '{}';
 
--- Admin siempre; operario solo si el admin le dio el permiso
+-- Admin siempre; operario o jefe solo si el admin le dio el permiso
 create or replace function tiene_permiso(p text) returns boolean
 language sql stable security definer set search_path = public as $$
-  select coalesce((select rol = 'admin' or (rol = 'operario' and p = any(permisos))
+  select coalesce((select rol = 'admin' or (rol in ('operario','jefe') and p = any(permisos))
                      from perfiles where id = auth.uid() and activo), false);
 $$;
 
@@ -804,3 +817,275 @@ create policy "precios_ver"   on precios for select to authenticated
 
 revoke execute on function cargar_lista_precios(text, date, text, text, jsonb) from anon, public;
 grant  execute on function cargar_lista_precios(text, date, text, text, jsonb) to authenticated;
+
+-- =====================================================================
+-- ============ ÓRDENES DE TRABAJO Y MANTENCIÓN EXTERNA ============
+-- =====================================================================
+--  Órdenes de trabajo: el jefe (o un admin) crea la orden y asigna personal.
+--  Flujo: Asignada → En curso → Terminada (la cierra quien la hizo, con un informe)
+--         → Verificada (la aprueba el jefe o un admin). Si el jefe la devuelve, vuelve a "En curso".
+--  El estado solo cambia con las funciones ot_iniciar / ot_terminar / ot_verificar.
+
+update empresas set modulos = modulos || '{ordenes}'::text[]
+ where id = 'omega' and not ('ordenes' = any(modulos));
+
+create table if not exists ordenes_trabajo (
+  id                uuid primary key default gen_random_uuid(),
+  numero            bigint generated always as identity unique,
+  empresa_id        text not null references empresas(id),
+  cliente_id        uuid references clientes(id) on delete set null,
+  titulo            text not null check (length(trim(titulo)) > 0),
+  tipo              text not null default 'Otros',
+  prioridad         text not null default 'Normal' check (prioridad in ('Baja','Normal','Alta','Urgente')),
+  ubicacion         text,
+  descripcion       text,
+  fecha_programada  date,
+  estado            text not null default 'Asignada'
+                    check (estado in ('Asignada','En curso','Terminada','Verificada')),
+  informe           text,               -- qué se hizo (lo escribe quien termina el trabajo)
+  materiales        text,
+  terminado_por     uuid references perfiles(id) on delete set null,
+  terminado_en      timestamptz,
+  verificado_por    uuid references perfiles(id) on delete set null,
+  verificado_en     timestamptz,
+  obs_verificacion  text,               -- comentario del jefe al aprobar o al devolver
+  devoluciones      integer not null default 0,
+  creado_por        uuid default auth.uid() references perfiles(id) on delete set null,
+  creado_en         timestamptz not null default now(),
+  actualizado_en    timestamptz not null default now()
+);
+create index if not exists ot_empresa_idx on ordenes_trabajo (empresa_id, estado, creado_en desc);
+
+create table if not exists orden_personal (
+  orden_id     uuid not null references ordenes_trabajo(id) on delete cascade,
+  personal_id  uuid not null references personal(id),
+  primary key (orden_id, personal_id)
+);
+
+-- Línea de tiempo visible para el personal (quién creó, inició, terminó, verificó o devolvió)
+create table if not exists ot_historial (
+  id        bigint generated always as identity primary key,
+  orden_id  uuid not null references ordenes_trabajo(id) on delete cascade,
+  fecha     timestamptz not null default now(),
+  usuario   text,
+  accion    text not null,
+  detalle   text
+);
+create index if not exists ot_historial_idx on ot_historial (orden_id, fecha);
+
+create or replace function ot_nombre_usuario() returns text
+language sql stable security definer set search_path = public as $$
+  select coalesce(nullif(trim(nombre), ''), email) from perfiles where id = auth.uid();
+$$;
+
+-- ¿El usuario con sesión está asignado a la orden? (por su ficha de Personal)
+create or replace function ot_asignado(p_orden uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from orden_personal op join personal p on p.id = op.personal_id
+                  where op.orden_id = p_orden and p.usuario_id = auth.uid());
+$$;
+
+-- Protege el flujo: estado, informe y verificación solo cambian con las funciones de abajo
+create or replace function ot_proteger() returns trigger language plpgsql as $$
+begin
+  if coalesce(current_setting('horus.ot_flujo', true), '') = '1' then return new; end if;
+  if tg_op = 'INSERT' then
+    new.estado := 'Asignada';
+    new.informe := null; new.materiales := null; new.terminado_por := null; new.terminado_en := null;
+    new.verificado_por := null; new.verificado_en := null; new.obs_verificacion := null; new.devoluciones := 0;
+    return new;
+  end if;
+  if (new.estado, new.informe, new.materiales, new.terminado_por, new.terminado_en, new.verificado_por,
+      new.verificado_en, new.obs_verificacion, new.devoluciones, new.empresa_id)
+     is distinct from
+     (old.estado, old.informe, old.materiales, old.terminado_por, old.terminado_en, old.verificado_por,
+      old.verificado_en, old.obs_verificacion, old.devoluciones, old.empresa_id) then
+    raise exception 'El estado de la orden se cambia con los botones Iniciar, Terminar y Verificar';
+  end if;
+  if old.estado = 'Verificada' and not es_admin() then
+    raise exception 'La orden ya está verificada: solo un administrador puede modificarla';
+  end if;
+  return new;
+end $$;
+drop trigger if exists ot_proteger on ordenes_trabajo;
+create trigger ot_proteger before insert or update on ordenes_trabajo
+  for each row execute function ot_proteger();
+
+drop trigger if exists marcar_actualizado on ordenes_trabajo;
+create trigger marcar_actualizado before update on ordenes_trabajo
+  for each row execute function marcar_actualizado();
+
+create or replace function ot_al_crear() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into ot_historial (orden_id, usuario, accion) values (new.id, ot_nombre_usuario(), 'Creada');
+  return null;
+end $$;
+drop trigger if exists ot_al_crear on ordenes_trabajo;
+create trigger ot_al_crear after insert on ordenes_trabajo
+  for each row execute function ot_al_crear();
+
+-- Asignado (o jefe/admin): Asignada → En curso
+create or replace function ot_iniciar(p_orden uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare o ordenes_trabajo;
+begin
+  select * into o from ordenes_trabajo where id = p_orden for update;
+  if o.id is null or not es_staff(o.empresa_id) then raise exception 'No se encontró la orden'; end if;
+  if not (ot_asignado(p_orden) or es_jefe(o.empresa_id)) then raise exception 'Solo el personal asignado puede iniciar esta orden'; end if;
+  if o.estado <> 'Asignada' then raise exception 'La orden no está en estado Asignada'; end if;
+  perform set_config('horus.ot_flujo', '1', true);
+  update ordenes_trabajo set estado = 'En curso' where id = p_orden;
+  perform set_config('horus.ot_flujo', '', true);
+  insert into ot_historial (orden_id, usuario, accion) values (p_orden, ot_nombre_usuario(), 'Iniciada');
+end $$;
+
+-- Asignado (o jefe/admin): marca el trabajo como terminado, con informe. Queda esperando verificación.
+create or replace function ot_terminar(p_orden uuid, p_informe text, p_materiales text default null) returns void
+language plpgsql security definer set search_path = public as $$
+declare o ordenes_trabajo;
+begin
+  select * into o from ordenes_trabajo where id = p_orden for update;
+  if o.id is null or not es_staff(o.empresa_id) then raise exception 'No se encontró la orden'; end if;
+  if not (ot_asignado(p_orden) or es_jefe(o.empresa_id)) then raise exception 'Solo el personal asignado puede terminar esta orden'; end if;
+  if o.estado not in ('Asignada','En curso') then raise exception 'La orden ya fue terminada'; end if;
+  if length(trim(coalesce(p_informe, ''))) = 0 then raise exception 'Escribe qué trabajo se realizó'; end if;
+  perform set_config('horus.ot_flujo', '1', true);
+  update ordenes_trabajo set estado = 'Terminada', informe = trim(p_informe),
+         materiales = nullif(trim(coalesce(p_materiales, '')), ''),
+         terminado_por = auth.uid(), terminado_en = now()
+   where id = p_orden;
+  perform set_config('horus.ot_flujo', '', true);
+  insert into ot_historial (orden_id, usuario, accion, detalle) values (p_orden, ot_nombre_usuario(), 'Terminada', trim(p_informe));
+end $$;
+
+-- Jefe o admin: aprueba (Verificada) o devuelve (En curso, con el motivo)
+create or replace function ot_verificar(p_orden uuid, p_aprobar boolean, p_obs text default null) returns void
+language plpgsql security definer set search_path = public as $$
+declare o ordenes_trabajo; obs text := nullif(trim(coalesce(p_obs, '')), '');
+begin
+  select * into o from ordenes_trabajo where id = p_orden for update;
+  if o.id is null or not es_staff(o.empresa_id) then raise exception 'No se encontró la orden'; end if;
+  if not es_jefe(o.empresa_id) then raise exception 'Solo el jefe o un administrador puede verificar trabajos'; end if;
+  if o.estado <> 'Terminada' then raise exception 'Solo se verifican órdenes terminadas'; end if;
+  if not p_aprobar and obs is null then raise exception 'Indica por qué se devuelve el trabajo'; end if;
+  perform set_config('horus.ot_flujo', '1', true);
+  if p_aprobar then
+    update ordenes_trabajo set estado = 'Verificada', verificado_por = auth.uid(), verificado_en = now(),
+           obs_verificacion = obs where id = p_orden;
+  else
+    update ordenes_trabajo set estado = 'En curso', obs_verificacion = obs, devoluciones = devoluciones + 1,
+           terminado_por = null, terminado_en = null where id = p_orden;
+  end if;
+  perform set_config('horus.ot_flujo', '', true);
+  insert into ot_historial (orden_id, usuario, accion, detalle)
+  values (p_orden, ot_nombre_usuario(), case when p_aprobar then 'Verificada' else 'Devuelta' end, obs);
+end $$;
+
+-- ---------- MANTENCIÓN EXTERNA: equipos que salen del taller y vuelven ----------
+create table if not exists mantenciones_externas (
+  id              uuid primary key default gen_random_uuid(),
+  equipo_id       text not null references equipos(id) on delete cascade,
+  empresa_id      text not null references empresas(id),
+  destino         text not null check (length(trim(destino)) > 0),  -- taller o empresa externa
+  contacto        text,
+  motivo          text,
+  guia_salida     text,
+  fecha_salida    date not null default current_date,
+  fecha_estimada  date,
+  fecha_retorno   date,
+  guia_retorno    text,
+  notas_retorno   text,
+  estado_previo   text,
+  estado_retorno  text,
+  enviado_por     uuid default auth.uid() references perfiles(id) on delete set null,
+  recibido_por    uuid references perfiles(id) on delete set null,
+  creado_en       timestamptz not null default now()
+);
+create index if not exists mext_equipo_idx on mantenciones_externas (equipo_id, fecha_salida desc);
+-- Un equipo solo puede estar fuera una vez a la vez
+create unique index if not exists mext_abierta_idx on mantenciones_externas (equipo_id) where fecha_retorno is null;
+
+-- Al salir: el equipo pasa a "En mantención externa". Al volver: al estado que se indique.
+create or replace function mext_antes() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'INSERT' then
+    select e.empresa_id, e.estado into new.empresa_id, new.estado_previo from equipos e where e.id = new.equipo_id;
+    new.fecha_retorno := null; new.recibido_por := null; new.estado_retorno := null;
+  else
+    new.equipo_id := old.equipo_id; new.empresa_id := old.empresa_id;
+    if old.fecha_retorno is not null and new.fecha_retorno is null then
+      raise exception 'El retorno ya fue registrado';
+    end if;
+    if new.fecha_retorno is not null and old.fecha_retorno is null then
+      new.recibido_por := auth.uid();
+      new.estado_retorno := coalesce(nullif(trim(coalesce(new.estado_retorno, '')), ''), 'En mantención');
+    end if;
+  end if;
+  if new.fecha_retorno is not null and new.fecha_retorno < new.fecha_salida then
+    raise exception 'La fecha de retorno es anterior a la de salida';
+  end if;
+  return new;
+end $$;
+drop trigger if exists mext_antes on mantenciones_externas;
+create trigger mext_antes before insert or update on mantenciones_externas
+  for each row execute function mext_antes();
+
+create or replace function mext_despues() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'INSERT' then
+    update equipos set estado = 'En mantención externa' where id = new.equipo_id;
+  elsif new.fecha_retorno is not null and old.fecha_retorno is null then
+    update equipos set estado = new.estado_retorno where id = new.equipo_id;
+  end if;
+  return null;
+end $$;
+drop trigger if exists mext_despues on mantenciones_externas;
+create trigger mext_despues after insert or update on mantenciones_externas
+  for each row execute function mext_despues();
+
+do $$
+declare t text;
+begin
+  foreach t in array array['ordenes_trabajo','orden_personal','mantenciones_externas'] loop
+    execute format('drop trigger if exists auditar on %I', t);
+    execute format('create trigger auditar after insert or update or delete on %I for each row execute function registrar_cambio()', t);
+  end loop;
+  foreach t in array array['ordenes_trabajo','orden_personal','ot_historial','mantenciones_externas'] loop
+    execute format('alter table %I enable row level security', t);
+    execute (select coalesce(string_agg(format('drop policy if exists %I on %I;', policyname, t), ' '), 'select 1')
+               from pg_policies where schemaname = 'public' and tablename = t);
+  end loop;
+end $$;
+
+-- Órdenes: todo el personal de la empresa las ve; el jefe (o admin) crea, edita y asigna; solo admin borra
+create policy "ot_ver"     on ordenes_trabajo for select to authenticated using (es_staff(empresa_id));
+create policy "ot_crear"   on ordenes_trabajo for insert to authenticated with check (es_jefe(empresa_id));
+create policy "ot_editar"  on ordenes_trabajo for update to authenticated using (es_jefe(empresa_id)) with check (es_jefe(empresa_id));
+create policy "ot_borrar"  on ordenes_trabajo for delete to authenticated using (es_admin());
+create policy "otp_ver"    on orden_personal for select to authenticated
+  using (exists (select 1 from ordenes_trabajo o where o.id = orden_id));
+create policy "otp_crear"  on orden_personal for insert to authenticated
+  with check (exists (select 1 from ordenes_trabajo o where o.id = orden_id and es_jefe(o.empresa_id) and o.estado <> 'Verificada'));
+create policy "otp_quitar" on orden_personal for delete to authenticated
+  using (exists (select 1 from ordenes_trabajo o where o.id = orden_id and es_jefe(o.empresa_id) and o.estado <> 'Verificada'));
+create policy "oth_ver"    on ot_historial for select to authenticated
+  using (exists (select 1 from ordenes_trabajo o where o.id = orden_id));
+
+-- Mantención externa: el personal de la empresa registra salidas y retornos; solo admin borra
+create policy "mext_ver"    on mantenciones_externas for select to authenticated using (es_staff(empresa_id));
+create policy "mext_crear"  on mantenciones_externas for insert to authenticated
+  with check (exists (select 1 from equipos e where e.id = equipo_id and es_staff(e.empresa_id)));
+create policy "mext_editar" on mantenciones_externas for update to authenticated using (es_staff(empresa_id)) with check (es_staff(empresa_id));
+create policy "mext_borrar" on mantenciones_externas for delete to authenticated using (es_admin());
+
+revoke execute on function ot_iniciar(uuid), ot_terminar(uuid, text, text), ot_verificar(uuid, boolean, text) from anon, public;
+grant  execute on function ot_iniciar(uuid), ot_terminar(uuid, text, text), ot_verificar(uuid, boolean, text) to authenticated;
+
+do $$
+begin
+  begin execute 'alter publication supabase_realtime add table ordenes_trabajo';
+  exception when duplicate_object then null; end;
+end $$;
+
+notify pgrst, 'reload schema';

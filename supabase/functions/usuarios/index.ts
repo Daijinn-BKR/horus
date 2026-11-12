@@ -14,7 +14,7 @@ const CORS = {
 const responder = (cuerpo: unknown, status = 200) =>
   new Response(JSON.stringify(cuerpo), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-const ROLES = ["admin", "operario", "cliente", "pendiente"];
+const ROLES = ["admin", "jefe", "operario", "cliente", "pendiente"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
     // El trigger crea el perfil como "pendiente"; aquí se asigna el rol pedido
     const { error: e2 } = await admin.from("perfiles").update({
       nombre: b.nombre || null, rol,
-      empresa_id: rol === "operario" ? b.empresa_id : null,
+      empresa_id: rol === "operario" || rol === "jefe" ? b.empresa_id : null,
       cliente_id: rol === "cliente" ? b.cliente_id : null,
     }).eq("id", nuevo.user.id);
     if (e2) {
