@@ -9,3 +9,4 @@ sala-bombas/.env
 # Apps originales (referencia local; contienen claves)
 legado/
 .claude/
+__pycache__/

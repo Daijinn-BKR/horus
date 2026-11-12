@@ -32,7 +32,7 @@ jobs:
           test -n "$SUPABASE_KEY" || { echo "Falta el secreto SUPABASE_KEY"; exit 1; }
           mkdir _site
           cp index.html sw.js manifest.webmanifest _site/
-          cp -r css js icons _site/
+          cp -r css js icons impresora-taller _site/
           rm -f _site/js/config.js
           # config.js = config.example.js con la URL y la clave reales
           sed -e "s#https://TU-PROYECTO.supabase.co#${SUPABASE_URL}#" -e "s#TU-CLAVE-PUBLICABLE#${SUPABASE_KEY}#" \

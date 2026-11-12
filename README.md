@@ -86,6 +86,21 @@ En el repositorio de GitHub: **Settings → Secrets and variables → Actions**,
 > Imprime las etiquetas QR **desde la dirección definitiva**: el QR lleva la dirección desde donde se abrió la app.
 > Los QR antiguos (`…#equipo=ID`) también funcionan en Horus.
 
+## Impresora de etiquetas del taller (3nStar RPT004)
+La RPT004 no imprime bien las imágenes que manda el navegador. En el PC del taller (Linux Mint) corre un
+servicio local (`impresora-taller/`) que recibe la etiqueta desde Horus y la imprime con el QR nativo de la
+impresora, con el logo de Omega. En celulares y otros PC, el botón usa la impresión normal del navegador.
+
+Requisitos: driver POS-80 instalado y cola de CUPS llamada `POS80`. Instalación del servicio (sin sudo, una vez):
+```bash
+mkdir -p ~/actualizar && cd ~/actualizar
+B=https://daijinn-bkr.github.io/horus/impresora-taller
+curl -fsSLO $B/servidor.py
+curl -fsSLO $B/logo_etiqueta.bin
+curl -fsSLO $B/instalar.sh
+bash instalar.sh
+```
+
 ## Sala de bombas
 1. En Horus → Administración → Sala de bombas: **Agregar módulo** (ID = `DEVICE_ID`, ej. `sala-bombas-01`), asígnale el cliente y define la **Clave ESP32**.
 2. **Datos simulados** (sin hardware):

@@ -277,7 +277,40 @@ async function subirArchivos(e, files, tipo) {
   if ($("#fotos")) cargarMedios(e.id);
 }
 
-function imprimirEtiqueta(e) {
+// Impresora del taller (3nStar RPT004): servicio local impresora-taller/ que imprime con el QR
+// nativo de la impresora. Si no está instalado (celular, otro PC), se usa window.print().
+const IMPRESORA_LOCAL = "http://127.0.0.1:9101";
+// Misma clave que usaba Control Equipos (mismo dominio): el PC del taller ya queda reconocido.
+const marcaLocal = () => { try { localStorage.setItem("impresora_local", "1"); } catch (_) {} };
+const esPcTaller = () => { try { return localStorage.getItem("impresora_local") === "1"; } catch (_) { return false; } };
+
+async function imprimirLocal(e) {
+  const r = await fetch(IMPRESORA_LOCAL + "/imprimir", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      qr: linkEquipo(e.id),
+      id: e.id,
+      cliente: e.clientes?.nombre || "",
+      fecha: fechaHora(e.creado_en),
+      empresa: (H.empresa?.nombre || "").toUpperCase(),
+      copias: 1,
+    }),
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "error " + r.status);
+}
+
+async function imprimirEtiqueta(e) {
+  try {
+    await imprimirLocal(e);
+    marcaLocal();
+    aviso("Etiqueta enviada a la impresora.");
+    return;
+  } catch (_) {
+    // En el PC del taller no se cae a window.print(): la RPT004 imprimiría basura.
+    if (esPcTaller()) { aviso("La impresora del taller no responde. ¿Está encendida y con papel?", true); return; }
+  }
   const et = $("#etiqueta");
   const src = qrUrl(linkEquipo(e.id), 480, "&dark=000000&light=ffffff").replace("margin=1", "margin=2");
   et.innerHTML = `
