@@ -10,3 +10,5 @@ sala-bombas/.env
 legado/
 .claude/
 __pycache__/
+# Caché local de la CLI de Supabase
+supabase/.temp/
