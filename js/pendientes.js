@@ -1,16 +1,16 @@
 // Horus · Proyectos pendientes (solo jefe eléctrico y administrador): qué hay que hacer, dónde,
 // para cuándo y la lista de materiales con precio, con el monto total calculado.
 import {
-  sb, H, $, $$, esc, aviso, msgError, vista, cargando, fecha, fmtHora, hoy, nf, descargarCSV,
-  clientesEmpresa, esAdmin, esJefe,
+  sb, H, $, $$, esc, aviso, msgError, msgCarga, dato, vista, cargando, fecha, fmtHora, hoy, nf, descargarCSV,
+  clientesEmpresa, esAdmin,
 } from "./nucleo.js";
 
-const soloJefe = (f) => (...a) => (esJefe() ? f(...a) : vista(`<p class="vacio">Pendientes es solo para el jefe eléctrico y los administradores.</p>`));
+// Solo jefe eléctrico y admin (lo revisa el router)
 export const rutas = [
-  { patron: /^#\/pendientes$/, modulo: "pendientes", acceso: "staff", render: soloJefe(() => lista()) },
-  { patron: /^#\/pendientes\/nuevo$/, modulo: "pendientes", acceso: "staff", render: soloJefe(() => formulario(null)) },
-  { patron: /^#\/pendientes\/([^/]+)\/editar$/, modulo: "pendientes", acceso: "staff", render: soloJefe((id) => formulario(id)) },
-  { patron: /^#\/pendientes\/([^/]+)$/, modulo: "pendientes", acceso: "staff", render: soloJefe((id) => ficha(id)) },
+  { patron: /^#\/pendientes$/, modulo: "pendientes", acceso: "jefe", render: () => lista() },
+  { patron: /^#\/pendientes\/nuevo$/, modulo: "pendientes", acceso: "jefe", render: () => formulario(null) },
+  { patron: /^#\/pendientes\/([^/]+)\/editar$/, modulo: "pendientes", acceso: "jefe", render: (id) => formulario(id) },
+  { patron: /^#\/pendientes\/([^/]+)$/, modulo: "pendientes", acceso: "jefe", render: (id) => ficha(id) },
 ];
 
 const ESTADOS = ["Pendiente", "En curso", "Terminado", "Cancelado"];
@@ -50,8 +50,7 @@ async function lista() {
     .eq("empresa_id", H.empresa.id).order("fecha_estimada", { ascending: true, nullsFirst: false }).order("creado_en");
   if (!$("#p-lista")) return; // el usuario cambió de pantalla mientras cargaba
   if (error) {
-    $("#p-lista").innerHTML = `<p class="vacio">${esc(/proyectos_pendientes/.test(error.message)
-      ? "Falta ejecutar la versión nueva de supabase/schema.sql en Supabase." : msgError(error))}</p>`;
+    $("#p-lista").innerHTML = `<p class="vacio">${esc(msgCarga(error, "proyectos_pendientes"))}</p>`;
     return;
   }
   const total = (p) => montos(p.proyecto_materiales, p.agregar_iva).total;
@@ -92,7 +91,6 @@ async function ficha(id) {
   if (error || !p) return vista(`${volver}<p class="vacio">${esc(error ? msgError(error) : "No se encontró el proyecto.")}</p>`);
   const mats = [...p.proyecto_materiales].sort((a, b) => a.posicion - b.posicion);
   const m = montos(mats, p.agregar_iva);
-  const dato = (t, v) => `<dt>${t}</dt><dd>${v == null || v === "" ? '<span class="muted">—</span>' : v}</dd>`;
 
   const v = vista(`${volver}
     <div class="panel"><div class="cabecera">

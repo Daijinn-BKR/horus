@@ -1,6 +1,6 @@
 // Horus · Administración (solo rol admin)
 import {
-  sb, H, MODULOS, ROLES, ROLES_EMPRESA, PERMISOS, $, $$, esc, aviso, msgError, vista, cargando, fmtHora, fecha,
+  sb, H, MODULOS, ROLES, ROLES_EMPRESA, PERMISOS, $, $$, esc, aviso, msgError, vista, cargando, fmtHora,
   clientesEmpresa, olvidarClientes, normalizarRut, normalizarTelefono, validarCampo,
 } from "./nucleo.js";
 
@@ -43,7 +43,6 @@ async function usuarios() {
   if (p.error) return vista(`<p class="vacio">${esc(msgError(p.error))}</p>`);
   const todosClientes = c.data || [];
   const hayPermisos = p.data.some((u) => "permisos" in u);
-  const nombreEmp = (id) => H.empresas.find((e) => e.id === id)?.nombre || "";
   const optEmpresas = (sel) => `<option value="">—</option>` + H.empresas.map((e) => `<option value="${e.id}"${e.id === sel ? " selected" : ""}>${esc(e.nombre)}</option>`).join("");
   const optClientes = (sel) => `<option value="">—</option>` + H.empresas.map((e) => `<optgroup label="${esc(e.nombre)}">
       ${todosClientes.filter((x) => x.empresa_id === e.id).map((x) => `<option value="${x.id}"${x.id === sel ? " selected" : ""}>${esc(x.nombre)}</option>`).join("")}</optgroup>`).join("");

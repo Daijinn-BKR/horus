@@ -78,6 +78,12 @@ export function msgError(error) {
   if (error.code === "42501" || /row-level security/i.test(m)) return "No tienes permiso para hacer esto.";
   return m;
 }
+// Error al cargar una lista o ficha. Si falta la tabla, es que no se ejecutó la versión nueva del esquema.
+export const msgCarga = (error, tabla) => (new RegExp(tabla).test(error?.message || "")
+  ? "Falta ejecutar la versión nueva de supabase/schema.sql en Supabase." : msgError(error));
+// Fila de una lista de datos (<dl class="datos">). html ya viene escapado; vacío → "—".
+export const dato = (etiqueta, html) =>
+  `<dt>${esc(etiqueta)}</dt><dd>${html == null || html === "" ? '<span class="muted">—</span>' : html}</dd>`;
 
 // Contenido de la vista principal + limpieza al cambiar de pantalla
 let limpiezas = [];
@@ -161,14 +167,23 @@ export function validarCampo(input, normalizar, mensaje) {
 
 // ---------- Enlaces y QR ----------
 export const linkEquipo = (id) => location.origin + location.pathname + "#/e/" + encodeURIComponent(id);
-export const qrUrl = (texto, size = 300, extra = "") =>
-  `https://quickchart.io/qr?size=${size}&margin=1&ecLevel=M${extra}&text=${encodeURIComponent(texto)}`;
+// Imagen (data URL) del QR, generada en el navegador: el enlace no sale a ningún servicio externo
+export async function qrImagen(texto, size = 300, margen = 1) {
+  await cargarScript(SCRIPTS.qr);
+  const qr = window.qrcode(0, "M");
+  qr.addData(texto);
+  qr.make();
+  const celda = Math.max(2, Math.floor(size / (qr.getModuleCount() + margen * 2)));
+  return qr.createDataURL(celda, celda * margen);
+}
 
 // ---------- CSV (abre directo en Excel) ----------
 export function descargarCSV(nombre, encabezados, filas) {
   const celda = (v) => {
     if (v == null) return "";
-    const s = typeof v === "number" ? String(v).replace(".", ",") : Array.isArray(v) ? v.join(", ") : String(v);
+    let s = typeof v === "number" ? String(v).replace(".", ",") : Array.isArray(v) ? v.join(", ") : String(v);
+    // Un texto que empieza con = + - @ (o tab/retorno) Excel lo ejecuta como fórmula: se antepone '
+    if (typeof v !== "number" && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
     return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const csv = "﻿" + [encabezados, ...filas].map((f) => f.map(celda).join(";")).join("\r\n");
@@ -197,29 +212,27 @@ export function opcionesServicio() {
   return t[H.empresa?.id] || ["Otros"];
 }
 
-// ---------- Fotos y videos ----------
-export const MAX_VIDEO = 50 * 1024 * 1024; // 50 MB, límite del plan gratis
-// Reduce las fotos del celular (4–10 MB) a ~300 KB
-export async function reducirImagen(file, max = 1600) {
-  try {
-    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
-    const c = document.createElement("canvas");
-    c.width = Math.round(bmp.width * k);
-    c.height = Math.round(bmp.height * k);
-    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
-    return (await new Promise((r) => c.toBlob(r, "image/jpeg", 0.82))) || file;
-  } catch {
-    return file;
-  }
-}
+// Librerías externas, con su huella (SRI): si el CDN entregara un archivo alterado, el navegador no lo ejecuta.
+// Al cambiar una versión hay que recalcular la huella:
+//   curl -sL URL | openssl dgst -sha384 -binary | openssl base64 -A
+export const SCRIPTS = {
+  lector: { src: "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js",
+    integrity: "sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" },
+  chart: { src: "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js",
+    integrity: "sha384-bs/nf9FbdNouRbMiFcrcZfLXYPKiPaGVGplVbv7dLGECccEXDW+S3zjqSKR5ZEaD" },
+  excel: { src: "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js",
+    integrity: "sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT" },
+  qr: { src: "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js",
+    integrity: "sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" },
+};
 
-// Carga un script externo una sola vez (Chart.js, lector QR)
+// Carga un script externo una sola vez
 const scripts = {};
-export function cargarScript(src) {
+export function cargarScript({ src, integrity }) {
   return (scripts[src] ||= new Promise((ok, mal) => {
     const s = document.createElement("script");
-    s.src = src; s.onload = ok; s.onerror = () => { delete scripts[src]; mal(new Error("No se pudo cargar " + src)); };
+    s.src = src; s.integrity = integrity; s.crossOrigin = "anonymous";
+    s.onload = ok; s.onerror = () => { delete scripts[src]; mal(new Error("No se pudo cargar " + src)); };
     document.head.appendChild(s);
   }));
 }
@@ -227,7 +240,7 @@ export function cargarScript(src) {
 // Lector de QR / código de barras con la cámara
 let lector = null;
 export async function abrirLector(idContenedor, alLeer) {
-  await cargarScript("https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js");
+  await cargarScript(SCRIPTS.lector);
   await cerrarLector();
   const l = new window.Html5Qrcode(idContenedor);
   lector = l;

@@ -141,11 +141,26 @@ Umbrales de alarma: se editan por módulo en Administración → Sala de bombas 
 | `js/excel.js` | Buscador de Excel (y lectura de Excel para la lista de precios) |
 | `js/admin.js` | Usuarios, clientes, personal, módulos ESP32, empresas, historial |
 | `js/publico.js` | Ficha limitada (QR) |
+| `js/medios.js` | Fotos y videos (Equipos y Órdenes de trabajo) |
+| `js/tema.js` | Tema claro/oscuro antes de pintar la página |
 | `supabase/schema.sql` | Tablas, permisos por rol, funciones, historial de cambios |
 | `supabase/functions/usuarios/` | Crear usuarios y cambiar claves desde la app |
 | `migracion/` | Copia los datos de las 3 bases antiguas |
 | `sala-bombas/` | Firmware ESP32 y simulador |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Instalación como app |
+
+## Seguridad
+- **Permisos en la base de datos**: cada tabla tiene Row Level Security. Además, el cliente y el personal de un
+  registro deben ser de la misma empresa, y quién creó o subió algo (`creado_por`, `subido_por`, `usuario`…) lo
+  fija la base de datos: no se puede falsificar desde la app.
+- **Archivos**: los buckets `equipos` y `ordenes` son privados y solo aceptan fotos y videos.
+- **Política de seguridad (CSP)** en `index.html`: solo se ejecutan scripts de este sitio y de los CDN de las
+  librerías; nada en línea. Si Supabase usara un dominio propio (no `*.supabase.co`), hay que agregarlo a la CSP.
+- **Librerías externas con huella (SRI)**: supabase-js en `index.html` y el resto en `SCRIPTS` de `js/nucleo.js`.
+  Si cambias una versión, recalcula la huella:
+  `curl -sL URL | openssl dgst -sha384 -binary | openssl base64 -A`
+- **QR**: se generan en el navegador; los enlaces de los equipos no se envían a servicios externos.
+- **CSV**: los textos que empiezan con `= + - @` se exportan con `'` delante para que Excel no los ejecute.
 
 ## Límites del plan gratis de Supabase
 500 MB de base de datos y 1 GB de archivos para **todo** el sistema (antes eran 3 proyectos con su propio límite). Las fotos se reducen a ~300 KB; los videos y las lecturas de sala de bombas son lo que más ocupa. Si el proyecto no se usa en 7 días, Supabase lo pausa.

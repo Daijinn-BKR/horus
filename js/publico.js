@@ -1,8 +1,8 @@
 // Horus · ficha limitada de un equipo (visitante con el QR y clientes)
-import { sb, $, esc, fecha, chipEstado } from "./nucleo.js";
+import { sb, $, esc, fecha, chipEstado, dato } from "./nucleo.js";
 
 export function fichaLimitadaHTML(f) {
-  const fila = (l, v) => `<dt>${l}</dt><dd>${v ? esc(v) : '<span class="muted">—</span>'}</dd>`;
+  const fila = (l, v) => dato(l, v ? esc(v) : "");
   return `
     <div class="panel">
       <div class="cabecera">

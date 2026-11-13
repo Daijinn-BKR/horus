@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Seguridad: solo se ejecutan scripts de este sitio y de los CDN listados (nada en línea).
+     Si Supabase usa un dominio propio (no *.supabase.co), hay que agregarlo en img-src, media-src y connect-src. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://127.0.0.1:9101; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <title>Horus</title>
 <meta name="description" content="Sistema de gestión Omega Eléctrica · Lafken Austral">
 <meta name="theme-color" content="#1f5fbf">
@@ -15,10 +18,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Quicksand:wght@700&display=swap">
-<script>
-  // Tema claro/oscuro: se aplica antes de pintar para evitar parpadeo
-  try { const t = localStorage.getItem("horus.tema"); if (t === "claro" || t === "oscuro") document.documentElement.dataset.theme = t === "claro" ? "light" : "dark"; } catch (e) {}
-</script>
+<script src="js/tema.js"></script>
 <link rel="stylesheet" href="css/horus.css">
 </head>
 <body>
@@ -70,7 +70,8 @@
 <div id="etiqueta"></div>
 <div id="aviso" role="status" aria-live="polite"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"
+  integrity="sha384-GFr3yTh5lJznCbZfpTtXnwboFsxqtTQoeTZCRHhE0579KrRmlCzen5AA8ohaB5ug" crossorigin="anonymous"></script>
 <script src="js/config.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>

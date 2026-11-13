@@ -17,6 +17,40 @@
 
 create extension if not exists pgcrypto with schema extensions;
 
+-- ============ AYUDANTES DEL SCRIPT (solo se usan al ejecutar este archivo) ============
+-- Activa RLS y borra las políticas anteriores, para poder volver a crearlas
+create or replace procedure horus_preparar_rls(p_tablas text[]) language plpgsql as $$
+declare t text;
+begin
+  foreach t in array p_tablas loop
+    execute format('alter table %I enable row level security', t);
+    execute (select coalesce(string_agg(format('drop policy if exists %I on %I;', policyname, t), ' '), 'select 1')
+               from pg_policies where schemaname = 'public' and tablename = t);
+  end loop;
+end $$;
+-- Registra en el historial de cambios (tabla auditoria) lo que pase en estas tablas
+create or replace procedure horus_auditar(p_tablas text[], p_eventos text default 'insert or update or delete')
+language plpgsql as $$
+declare t text;
+begin
+  foreach t in array p_tablas loop
+    execute format('drop trigger if exists auditar on %I', t);
+    execute format('create trigger auditar after %s on %I for each row execute function registrar_cambio()', p_eventos, t);
+  end loop;
+end $$;
+-- Avisa los cambios en vivo a la app
+create or replace procedure horus_tiempo_real(p_tablas text[]) language plpgsql as $$
+declare t text;
+begin
+  foreach t in array p_tablas loop
+    begin
+      execute format('alter publication supabase_realtime add table %I', t);
+    exception when duplicate_object then null;
+    end;
+  end loop;
+end $$;
+revoke all on procedure horus_preparar_rls(text[]), horus_auditar(text[], text), horus_tiempo_real(text[]) from public;
+
 -- ============ EMPRESAS ============
 create table if not exists empresas (
   id       text primary key,                       -- 'omega', 'lafken'
@@ -373,29 +407,13 @@ begin
   return null;
 end $$;
 
-do $$
-declare t text;
-begin
-  foreach t in array array['clientes','perfiles','personal','equipos','fotos_equipo','videos_equipo',
-                           'productos','movimientos','servicios','servicio_personal','dispositivos','empresas'] loop
-    execute format('drop trigger if exists auditar on %I', t);
-    execute format('create trigger auditar after insert or update or delete on %I for each row execute function registrar_cambio()', t);
-  end loop;
-end $$;
+call horus_auditar(array['clientes','perfiles','personal','equipos','fotos_equipo','videos_equipo',
+                          'productos','movimientos','servicios','servicio_personal','dispositivos','empresas']);
 
 -- ============ SEGURIDAD (Row Level Security) ============
-do $$
-declare t text;
-begin
-  foreach t in array array['empresas','clientes','perfiles','personal','equipos','fotos_equipo','videos_equipo',
-                           'productos','movimientos','servicios','servicio_personal','dispositivos',
-                           'dispositivo_claves','lecturas','eventos_sala','auditoria'] loop
-    execute format('alter table %I enable row level security', t);
-    -- borra las políticas anteriores para poder re-ejecutar el script
-    execute (select coalesce(string_agg(format('drop policy if exists %I on %I;', policyname, t), ' '), 'select 1')
-               from pg_policies where schemaname = 'public' and tablename = t);
-  end loop;
-end $$;
+call horus_preparar_rls(array['empresas','clientes','perfiles','personal','equipos','fotos_equipo','videos_equipo',
+                              'productos','movimientos','servicios','servicio_personal','dispositivos',
+                              'dispositivo_claves','lecturas','eventos_sala','auditoria']);
 
 -- Empresas: todos los usuarios con sesión las ven; solo admin las cambia
 create policy "empresas_ver"    on empresas for select to authenticated using (true);
@@ -604,6 +622,15 @@ language sql stable as $$
 $$;
 
 -- ============ ARCHIVOS (fotos y videos de equipos) ============
+-- ¿El archivo ya tiene su registro? Si no lo tiene (falló el paso de guardarlo), quien lo subió lo puede borrar.
+-- (plpgsql: la tabla ot_archivos se crea más abajo y aquí solo se consulta al usarla)
+create or replace function ruta_registrada(p_ruta text) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  return exists (select 1 from fotos_equipo where ruta = p_ruta)
+      or exists (select 1 from videos_equipo where ruta = p_ruta)
+      or exists (select 1 from ot_archivos where ruta = p_ruta);
+end $$;
 -- Bucket privado; 50 MB por archivo. Ruta: <empresa>/<equipo>/<archivo>
 insert into storage.buckets (id, name, public, file_size_limit)
 values ('equipos', 'equipos', false, 52428800)
@@ -617,19 +644,10 @@ create policy "horus_archivos_leer"   on storage.objects for select to authentic
 create policy "horus_archivos_subir"  on storage.objects for insert to authenticated
   with check (bucket_id = 'equipos' and es_staff((storage.foldername(name))[1]));
 create policy "horus_archivos_borrar" on storage.objects for delete to authenticated
-  using (bucket_id = 'equipos' and es_admin());
+  using (bucket_id = 'equipos' and (es_admin() or (owner_id = auth.uid()::text and not ruta_registrada(name))));
 
 -- ============ TIEMPO REAL ============
-do $$
-declare t text;
-begin
-  foreach t in array array['equipos','productos','movimientos','servicios','lecturas','eventos_sala'] loop
-    begin
-      execute format('alter publication supabase_realtime add table %I', t);
-    exception when duplicate_object then null;
-    end;
-  end loop;
-end $$;
+call horus_tiempo_real(array['equipos','productos','movimientos','servicios','lecturas','eventos_sala']);
 
 -- =====================================================================
 -- ============ PERMISOS ESPECIALES, BOBINADO Y LISTA DE PRECIOS ============
@@ -687,9 +705,7 @@ create index if not exists bobinados_empresa_fecha_idx on bobinados (empresa_id,
 drop trigger if exists marcar_actualizado on bobinados;
 create trigger marcar_actualizado before update on bobinados
   for each row execute function marcar_actualizado();
-drop trigger if exists auditar on bobinados;
-create trigger auditar after insert or update or delete on bobinados
-  for each row execute function registrar_cambio();
+call horus_auditar(array['bobinados']);
 
 -- ---------- LISTA DE PRECIOS: una por mes; nadie puede modificar sus productos ----------
 create table if not exists listas_precios (
@@ -716,9 +732,7 @@ create table if not exists precios (
 create index if not exists precios_lista_idx  on precios (lista_id, descripcion);
 create index if not exists precios_codigo_idx on precios (lista_id, codigo);
 
-drop trigger if exists auditar on listas_precios;
-create trigger auditar after insert or delete on listas_precios
-  for each row execute function registrar_cambio();
+call horus_auditar(array['listas_precios'], 'insert or delete');
 
 -- Texto sin tildes y en minúsculas, para que "valvula" encuentre "VÁLVULA"
 create or replace function horus_normal(t text) returns text language sql immutable as $$
@@ -788,15 +802,7 @@ language sql stable set search_path = public as $$
 $$;
 
 -- ---------- Seguridad ----------
-do $$
-declare t text;
-begin
-  foreach t in array array['bobinados','listas_precios','precios'] loop
-    execute format('alter table %I enable row level security', t);
-    execute (select coalesce(string_agg(format('drop policy if exists %I on %I;', policyname, t), ' '), 'select 1')
-               from pg_policies where schemaname = 'public' and tablename = t);
-  end loop;
-end $$;
+call horus_preparar_rls(array['bobinados','listas_precios','precios']);
 
 -- Bobinado: admin, u operario de la empresa con el permiso 'bobinado'. Solo admin borra.
 create policy "bobinados_ver"    on bobinados for select to authenticated
@@ -925,13 +931,22 @@ drop trigger if exists ot_al_crear on ordenes_trabajo;
 create trigger ot_al_crear after insert on ordenes_trabajo
   for each row execute function ot_al_crear();
 
--- Asignado (o jefe/admin): Asignada → En curso
-create or replace function ot_iniciar(p_orden uuid) returns void
+-- Bloquea la orden mientras se cambia su estado. Error si no existe o es de otra empresa.
+create or replace function ot_bloquear(p_orden uuid) returns ordenes_trabajo
 language plpgsql security definer set search_path = public as $$
 declare o ordenes_trabajo;
 begin
   select * into o from ordenes_trabajo where id = p_orden for update;
   if o.id is null or not es_staff(o.empresa_id) then raise exception 'No se encontró la orden'; end if;
+  return o;
+end $$;
+revoke all on function ot_bloquear(uuid) from public, anon, authenticated;
+
+-- Asignado (o jefe/admin): Asignada → En curso
+create or replace function ot_iniciar(p_orden uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare o ordenes_trabajo := ot_bloquear(p_orden);
+begin
   if not (ot_asignado(p_orden) or es_jefe(o.empresa_id)) then raise exception 'Solo el personal asignado puede iniciar esta orden'; end if;
   if o.estado <> 'Asignada' then raise exception 'La orden no está en estado Asignada'; end if;
   perform set_config('horus.ot_flujo', '1', true);
@@ -943,10 +958,8 @@ end $$;
 -- Asignado (o jefe/admin): marca el trabajo como terminado, con informe. Queda esperando verificación.
 create or replace function ot_terminar(p_orden uuid, p_informe text, p_materiales text default null) returns void
 language plpgsql security definer set search_path = public as $$
-declare o ordenes_trabajo;
+declare o ordenes_trabajo := ot_bloquear(p_orden);
 begin
-  select * into o from ordenes_trabajo where id = p_orden for update;
-  if o.id is null or not es_staff(o.empresa_id) then raise exception 'No se encontró la orden'; end if;
   if not (ot_asignado(p_orden) or es_jefe(o.empresa_id)) then raise exception 'Solo el personal asignado puede terminar esta orden'; end if;
   if o.estado not in ('Asignada','En curso') then raise exception 'La orden ya fue terminada'; end if;
   if length(trim(coalesce(p_informe, ''))) = 0 then raise exception 'Escribe qué trabajo se realizó'; end if;
@@ -962,10 +975,8 @@ end $$;
 -- Jefe o admin: aprueba (Verificada) o devuelve (En curso, con el motivo)
 create or replace function ot_verificar(p_orden uuid, p_aprobar boolean, p_obs text default null) returns void
 language plpgsql security definer set search_path = public as $$
-declare o ordenes_trabajo; obs text := nullif(trim(coalesce(p_obs, '')), '');
+declare o ordenes_trabajo := ot_bloquear(p_orden); obs text := nullif(trim(coalesce(p_obs, '')), '');
 begin
-  select * into o from ordenes_trabajo where id = p_orden for update;
-  if o.id is null or not es_staff(o.empresa_id) then raise exception 'No se encontró la orden'; end if;
   if not es_jefe(o.empresa_id) then raise exception 'Solo el jefe o un administrador puede verificar trabajos'; end if;
   if o.estado <> 'Terminada' then raise exception 'Solo se verifican órdenes terminadas'; end if;
   if not p_aprobar and obs is null then raise exception 'Indica por qué se devuelve el trabajo'; end if;
@@ -1044,19 +1055,8 @@ drop trigger if exists mext_despues on mantenciones_externas;
 create trigger mext_despues after insert or update on mantenciones_externas
   for each row execute function mext_despues();
 
-do $$
-declare t text;
-begin
-  foreach t in array array['ordenes_trabajo','orden_personal','mantenciones_externas'] loop
-    execute format('drop trigger if exists auditar on %I', t);
-    execute format('create trigger auditar after insert or update or delete on %I for each row execute function registrar_cambio()', t);
-  end loop;
-  foreach t in array array['ordenes_trabajo','orden_personal','ot_historial','mantenciones_externas'] loop
-    execute format('alter table %I enable row level security', t);
-    execute (select coalesce(string_agg(format('drop policy if exists %I on %I;', policyname, t), ' '), 'select 1')
-               from pg_policies where schemaname = 'public' and tablename = t);
-  end loop;
-end $$;
+call horus_auditar(array['ordenes_trabajo','orden_personal','mantenciones_externas']);
+call horus_preparar_rls(array['ordenes_trabajo','orden_personal','ot_historial','mantenciones_externas']);
 
 -- Órdenes: todo el personal de la empresa las ve; el jefe (o admin) crea, edita y asigna; solo admin borra
 create policy "ot_ver"     on ordenes_trabajo for select to authenticated using (es_staff(empresa_id));
@@ -1082,11 +1082,7 @@ create policy "mext_borrar" on mantenciones_externas for delete to authenticated
 revoke execute on function ot_iniciar(uuid), ot_terminar(uuid, text, text), ot_verificar(uuid, boolean, text) from anon, public;
 grant  execute on function ot_iniciar(uuid), ot_terminar(uuid, text, text), ot_verificar(uuid, boolean, text) to authenticated;
 
-do $$
-begin
-  begin execute 'alter publication supabase_realtime add table ordenes_trabajo';
-  exception when duplicate_object then null; end;
-end $$;
+call horus_tiempo_real(array['ordenes_trabajo']);
 
 
 -- =====================================================================
@@ -1196,19 +1192,8 @@ language sql stable security definer set search_path = public as $$
                                  where a.ruta = p_ruta and a.subido_por = auth.uid() and o.estado <> 'Verificada');
 $$;
 
-do $$
-declare t text;
-begin
-  foreach t in array array['proyectos_pendientes','ot_archivos'] loop
-    execute format('drop trigger if exists auditar on %I', t);
-    execute format('create trigger auditar after insert or update or delete on %I for each row execute function registrar_cambio()', t);
-  end loop;
-  foreach t in array array['proyectos_pendientes','proyecto_materiales','ot_archivos'] loop
-    execute format('alter table %I enable row level security', t);
-    execute (select coalesce(string_agg(format('drop policy if exists %I on %I;', policyname, t), ' '), 'select 1')
-               from pg_policies where schemaname = 'public' and tablename = t);
-  end loop;
-end $$;
+call horus_auditar(array['proyectos_pendientes','ot_archivos']);
+call horus_preparar_rls(array['proyectos_pendientes','proyecto_materiales','ot_archivos']);
 
 -- Proyectos: jefe de la empresa o admin; solo admin borra
 create policy "pp_ver"     on proyectos_pendientes for select to authenticated using (es_jefe(empresa_id));
@@ -1240,11 +1225,91 @@ create policy "horus_ot_subir"  on storage.objects for insert to authenticated
   with check (bucket_id = 'ordenes' and es_staff((storage.foldername(name))[1])
               and ot_puede_subir_ruta(name));
 create policy "horus_ot_borrar" on storage.objects for delete to authenticated
-  using (bucket_id = 'ordenes' and ot_puede_borrar_archivo(name));
+  using (bucket_id = 'ordenes' and (ot_puede_borrar_archivo(name) or (owner_id = auth.uid()::text and not ruta_registrada(name))));
 
 revoke execute on function pp_guardar(uuid, jsonb, jsonb), ot_puede_subir(uuid), ot_puede_subir_ruta(text),
   ot_puede_borrar_archivo(text) from anon, public;
 grant  execute on function pp_guardar(uuid, jsonb, jsonb), ot_puede_subir(uuid), ot_puede_subir_ruta(text),
   ot_puede_borrar_archivo(text) to authenticated;
+
+-- =====================================================================
+-- ============ INTEGRIDAD: EMPRESAS, AUTORES Y TIPOS DE ARCHIVO ============
+-- =====================================================================
+
+-- El cliente de un registro debe ser de la misma empresa (evita que una empresa le cargue
+-- datos a un cliente de la otra). Solo se revisa al crear o al cambiar el cliente o la empresa.
+create or replace function cliente_de_la_empresa() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.cliente_id is null then return new; end if;
+  if tg_op = 'UPDATE' and new.cliente_id is not distinct from old.cliente_id
+     and new.empresa_id is not distinct from old.empresa_id then return new; end if;
+  if not exists (select 1 from clientes c where c.id = new.cliente_id and c.empresa_id = new.empresa_id) then
+    raise exception 'El cliente no pertenece a esta empresa';
+  end if;
+  return new;
+end $$;
+
+-- El personal asignado a una orden o servicio debe ser de la misma empresa
+create or replace function personal_de_la_empresa() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare v_empresa text;
+begin
+  if tg_table_name = 'orden_personal' then
+    select empresa_id into v_empresa from ordenes_trabajo where id = new.orden_id;
+  else
+    select empresa_id into v_empresa from servicios where id = new.servicio_id;
+  end if;
+  if not exists (select 1 from personal p where p.id = new.personal_id and p.empresa_id = v_empresa) then
+    raise exception 'Esa persona no pertenece a esta empresa';
+  end if;
+  return new;
+end $$;
+
+-- Quién creó o subió un registro lo decide la base de datos (no se puede falsificar desde la app).
+-- Al editar, el autor original se conserva. Sin sesión (migración con la clave secreta) se respeta el valor.
+create or replace function fijar_autor() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare c text := tg_argv[0]; v jsonb;
+begin
+  if tg_op = 'UPDATE' then
+    v := to_jsonb(old) -> c;
+  elsif auth.uid() is null then
+    return new;
+  elsif coalesce(tg_argv[1], '') = 'email' then
+    v := to_jsonb(auth.jwt() ->> 'email');
+  else
+    v := to_jsonb(auth.uid());
+  end if;
+  return jsonb_populate_record(new, jsonb_build_object(c, v));
+end $$;
+
+do $$
+declare t text; r record;
+begin
+  foreach t in array array['equipos','servicios','ordenes_trabajo','proyectos_pendientes','bobinados','dispositivos'] loop
+    execute format('drop trigger if exists cliente_empresa on %I', t);
+    execute format('create trigger cliente_empresa before insert or update on %I for each row execute function cliente_de_la_empresa()', t);
+  end loop;
+  foreach t in array array['orden_personal','servicio_personal'] loop
+    execute format('drop trigger if exists personal_empresa on %I', t);
+    execute format('create trigger personal_empresa before insert or update on %I for each row execute function personal_de_la_empresa()', t);
+  end loop;
+  for r in select * from (values ('equipos','creado_por',''), ('fotos_equipo','creado_por',''), ('videos_equipo','creado_por',''),
+                                 ('bobinados','creado_por',''), ('listas_precios','cargado_por',''),
+                                 ('ordenes_trabajo','creado_por',''), ('mantenciones_externas','enviado_por',''),
+                                 ('proyectos_pendientes','creado_por',''), ('ot_archivos','subido_por',''),
+                                 ('movimientos','usuario','email')) as x(tabla, columna, tipo) loop
+    execute format('drop trigger if exists fijar_autor on %I', r.tabla);
+    execute format('create trigger fijar_autor before insert or update on %I for each row execute function fijar_autor(%L, %L)',
+                   r.tabla, r.columna, r.tipo);
+  end loop;
+end $$;
+
+-- Los buckets solo aceptan fotos y videos (nada de páginas web u otros archivos)
+update storage.buckets set allowed_mime_types = array['image/*', 'video/*'] where id in ('equipos', 'ordenes');
+
+revoke all on function ruta_registrada(text) from public, anon;
+grant execute on function ruta_registrada(text) to authenticated;
 
 notify pgrst, 'reload schema';

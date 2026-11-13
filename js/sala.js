@@ -1,7 +1,7 @@
 // Horus · Sala de bombas: monitoreo ESP32 (temperatura, humedad, presión, movimiento)
 import {
   sb, H, $, esc, aviso, msgError, vista, cargando, alSalirDeVista, fmtHora, descargarCSV,
-  cargarScript, esCliente,
+  cargarScript, SCRIPTS, esCliente,
 } from "./nucleo.js";
 
 export const rutas = [
@@ -9,7 +9,6 @@ export const rutas = [
   { patron: /^#\/sala\/([^/]+)$/, modulo: "sala_bombas", render: (id) => panel(id) },
 ];
 
-const CHART = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js";
 const enLinea = (d) => d.ultima_lectura && Date.now() - new Date(d.ultima_lectura) < (d.umbrales?.offline_seg || 60) * 1000;
 const hace = (iso) => {
   const s = Math.round((Date.now() - new Date(iso)) / 1000);
@@ -92,7 +91,7 @@ async function panel(id) {
   const u = d.umbrales || {};
   let graficos = null;
   try {
-    await cargarScript(CHART);
+    await cargarScript(SCRIPTS.chart);
     const css = (x) => getComputedStyle(document.documentElement).getPropertyValue(x).trim();
     const Chart = window.Chart;
     Chart.defaults.color = css("--muted");

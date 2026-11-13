@@ -1,10 +1,11 @@
 // Horus · Equipos (motores y bombas): fichas, mediciones, fotos/videos y QR
 import {
   sb, H, OPC, $, $$, esc, aviso, msgError, vista, cargando, alSalirDeVista, fecha, fechaHora, hoy,
-  chipEstado, unicos, linkEquipo, qrUrl, descargarCSV, clientesEmpresa, esAdmin, esStaff, esCliente,
-  abrirLector, cerrarLector, reducirImagen, MAX_VIDEO,
+  chipEstado, unicos, linkEquipo, qrImagen, dato, descargarCSV, clientesEmpresa, esAdmin, esCliente,
+  abrirLector, cerrarLector,
 } from "./nucleo.js";
 import { fichaLimitadaHTML } from "./publico.js";
+import { subirMedios, pintarMedios, borrarMedio } from "./medios.js";
 
 const BUCKET = "equipos";
 
@@ -132,8 +133,7 @@ async function buscarEquipo(id) {
 }
 const CAMBIO = Symbol("cambio de empresa");
 
-const filaDato = (c, e) =>
-  `<dt>${esc(c.l)}</dt><dd>${e[c.k] == null || e[c.k] === "" ? '<span class="muted">—</span>' : esc(e[c.k])}</dd>`;
+const filaDato = (c, e) => dato(c.l, esc(e[c.k]));
 
 async function ficha(id, refresco = false) {
   if (!refresco) cargando();
@@ -149,7 +149,7 @@ async function ficha(id, refresco = false) {
     </div></div>
 
     <div class="panel qr-panel">
-      <img src="${qrUrl(link)}" alt="Código QR del equipo ${esc(e.id)}">
+      <img id="qr-img" alt="Código QR del equipo ${esc(e.id)}">
       <div>
         <div class="muted small">ID del equipo</div>
         <div style="font-size:22px;font-weight:700;letter-spacing:1px;margin-bottom:8px">${esc(e.id)}</div>
@@ -187,6 +187,8 @@ async function ficha(id, refresco = false) {
     catch { prompt("Copia el enlace:", link); }
   };
   if (esAdmin()) $("#btn-eliminar", v).onclick = () => eliminarEquipo(e);
+  qrImagen(link).then((src) => { if ($("#qr-img")) $("#qr-img").src = src; })
+    .catch(() => aviso("No se pudo generar el código QR (¿sin internet?).", true));
   $("#in-fotos", v).onchange = (ev) => subirArchivos(e, ev.target.files, "foto");
   $("#in-videos", v).onchange = (ev) => subirArchivos(e, ev.target.files, "video");
   cargarMedios(e.id);
@@ -308,68 +310,31 @@ async function cargarExterna(e) {
   };
 }
 
+// Fotos y videos (tablas fotos_equipo y videos_equipo; ver js/medios.js)
+const TABLA = { foto: "fotos_equipo", video: "videos_equipo" };
 async function cargarMedios(id) {
   const [f, v] = await Promise.all([
     sb.from("fotos_equipo").select("*").eq("equipo_id", id).order("creado_en"),
     sb.from("videos_equipo").select("*").eq("equipo_id", id).order("creado_en"),
   ]);
   if (f.error || v.error) { aviso(msgError(f.error || v.error), true); return; }
-  const firmadas = {};
-  const rutasArch = [...f.data, ...v.data].map((x) => x.ruta);
-  if (rutasArch.length) {
-    const { data, error } = await sb.storage.from(BUCKET).createSignedUrls(rutasArch, 3600);
-    if (!error) data.forEach((d) => { if (d.signedUrl) firmadas[d.path] = d.signedUrl; });
-  }
   const cf = $("#fotos"), cv = $("#videos");
   if (!cf || !cv) return; // el usuario cambió de pantalla
-  const quitar = (tabla, x, txt) => esAdmin()
-    ? `<button type="button" class="quitar" data-tabla="${tabla}" data-id="${x.id}" data-ruta="${esc(x.ruta)}" aria-label="${txt}">✕</button>` : "";
-  cf.innerHTML = f.data.length ? f.data.map((x) => `
-    <figure><a href="${esc(firmadas[x.ruta] || "#")}" target="_blank" rel="noopener">
-      <img loading="lazy" src="${esc(firmadas[x.ruta] || "")}" alt="Foto del equipo"></a>
-      ${quitar("fotos_equipo", x, "Borrar foto")}</figure>`).join("")
-    : `<p class="muted small" style="grid-column:1/-1;margin:0">Sin fotos.</p>`;
-  cv.innerHTML = v.data.length ? v.data.map((x) => `
-    <figure><video controls preload="metadata" playsinline src="${esc(firmadas[x.ruta] || "")}"></video>
-      ${quitar("videos_equipo", x, "Borrar video")}</figure>`).join("")
-    : `<p class="muted small" style="margin:0">Sin videos.</p>`;
-  for (const b of $$("#vista .quitar")) b.onclick = () => borrarMedio(b.dataset.tabla, b.dataset.id, b.dataset.ruta, id);
-}
-
-async function borrarMedio(tabla, mid, ruta, equipoId) {
-  if (!confirm(tabla === "fotos_equipo" ? "¿Borrar esta foto?" : "¿Borrar este video?")) return;
-  const { error } = await sb.from(tabla).delete().eq("id", mid);
-  if (error) { aviso(msgError(error), true); return; }
-  await sb.storage.from(BUCKET).remove([ruta]);
-  aviso("Borrado.");
-  cargarMedios(equipoId);
+  await pintarMedios({
+    bucket: BUCKET, cf, cv, alt: "Foto del equipo", vacioFotos: "Sin fotos.", vacioVideos: "Sin videos.",
+    items: [...f.data.map((x) => ({ ...x, tipo: "foto" })), ...v.data.map((x) => ({ ...x, tipo: "video" }))],
+    puedeQuitar: () => esAdmin(),
+    alQuitar: async (x) => {
+      if (await borrarMedio(BUCKET, x, () => sb.from(TABLA[x.tipo]).delete().eq("id", x.id).select("id"))) cargarMedios(id);
+    },
+  });
 }
 
 async function subirArchivos(e, files, tipo) {
-  const lista = [...(files || [])];
-  if (!lista.length) return;
-  const tabla = tipo === "foto" ? "fotos_equipo" : "videos_equipo";
-  let ok = 0;
-  for (let i = 0; i < lista.length; i++) {
-    const file = lista[i];
-    aviso(`Subiendo ${tipo} ${i + 1} de ${lista.length}…`);
-    let blob = file;
-    let ext = (file.name.includes(".") ? file.name.split(".").pop() : "").toLowerCase() || "bin";
-    if (tipo === "foto") {
-      blob = await reducirImagen(file);
-      if (blob !== file) ext = "jpg";
-    } else if (file.size > MAX_VIDEO) {
-      aviso(`“${file.name}” pesa más de 50 MB. Grábalo más corto o en menor calidad.`, true);
-      continue;
-    }
-    const ruta = `${e.empresa_id}/${e.id}/${crypto.randomUUID()}.${ext}`;
-    const up = await sb.storage.from(BUCKET).upload(ruta, blob, { contentType: blob.type || file.type || undefined });
-    if (up.error) { aviso("No se pudo subir: " + msgError(up.error), true); continue; }
-    const ins = await sb.from(tabla).insert({ equipo_id: e.id, ruta });
-    if (ins.error) { aviso("No se pudo guardar: " + msgError(ins.error), true); continue; }
-    ok++;
-  }
-  if (ok) aviso(ok === 1 ? `${tipo === "foto" ? "Foto subida" : "Video subido"}.` : `${ok} archivos subidos.`);
+  await subirMedios({
+    bucket: BUCKET, carpeta: `${e.empresa_id}/${e.id}`, files, tipo,
+    registrar: (ruta, t) => sb.from(TABLA[t]).insert({ equipo_id: e.id, ruta }),
+  });
   if ($("#fotos")) cargarMedios(e.id);
 }
 
@@ -408,7 +373,9 @@ async function imprimirEtiqueta(e) {
     if (esPcTaller()) { aviso("La impresora del taller no responde. ¿Está encendida y con papel?", true); return; }
   }
   const et = $("#etiqueta");
-  const src = qrUrl(linkEquipo(e.id), 480, "&dark=000000&light=ffffff").replace("margin=1", "margin=2");
+  let src;
+  try { src = await qrImagen(linkEquipo(e.id), 480, 2); }
+  catch { aviso("No se pudo generar el código QR (¿sin internet?).", true); return; }
   et.innerHTML = `
     <img alt="" src="${src}">
     <div class="id">${esc(e.id)}</div>
@@ -418,7 +385,7 @@ async function imprimirEtiqueta(e) {
   const img = $("img", et);
   const lanzar = () => setTimeout(() => window.print(), 100);
   if (img.complete) lanzar();
-  else { img.onload = lanzar; img.onerror = () => aviso("No se pudo generar el QR (¿sin internet?).", true); }
+  else img.onload = lanzar;
 }
 
 async function eliminarEquipo(e) {

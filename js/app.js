@@ -1,7 +1,7 @@
 // Horus · arranque, sesión, navegación y rutas
 import {
-  sb, H, configurado, MODULOS, ROLES, $, esc, aviso, modulosVisibles, moduloActivo,
-  esAdmin, esStaff, esCliente, rol, limpiarVista, cerrarLector, sinAcceso, olvidarClientes,
+  sb, H, configurado, MODULOS, ROLES, $, esc, modulosVisibles, moduloActivo,
+  esAdmin, esStaff, esJefe, esCliente, limpiarVista, cerrarLector, sinAcceso, olvidarClientes,
 } from "./nucleo.js";
 import * as equipos from "./equipos.js";
 import * as inventario from "./inventario.js";
@@ -16,7 +16,7 @@ import * as admin from "./admin.js";
 import { renderPublico } from "./publico.js";
 
 // ---------- Rutas ----------
-// modulo: requiere ese módulo activo · acceso: "staff" | "admin" (por defecto: cualquier usuario con módulo)
+// modulo: requiere ese módulo activo · acceso: "staff" | "jefe" | "admin" (por defecto: cualquier usuario con módulo)
 const RUTAS = [
   ...equipos.rutas, ...inventario.rutas, ...servicios.rutas, ...sala.rutas, ...bobinado.rutas, ...precios.rutas, ...ordenes.rutas, ...pendientes.rutas, ...excel.rutas, ...admin.rutas,
 ];
@@ -86,14 +86,12 @@ async function router() {
     if (!m) continue;
     if (r.acceso === "admin" && !esAdmin()) return sinAcceso();
     if (r.acceso === "staff" && !esStaff()) return sinAcceso();
+    if (r.acceso === "jefe" && !esJefe()) return sinAcceso("Esta sección es solo para el jefe eléctrico y los administradores.");
     if (r.acceso === "cliente" && !esCliente()) return sinAcceso();
     if (r.modulo && !moduloActivo(r.modulo)) {
       const M = MODULOS[r.modulo];
       if (esStaff() && M.permiso && (H.empresa?.modulos || []).includes(r.modulo)) {
         return sinAcceso(`No tienes permiso para ${M.titulo}. Pídeselo al administrador.`);
-      }
-      if (esStaff() && M.soloJefe && (H.empresa?.modulos || []).includes(r.modulo)) {
-        return sinAcceso(`${M.titulo} es solo para el jefe eléctrico y los administradores.`);
       }
       return sinAcceso(esCliente()
         ? `No tienes habilitado el módulo ${MODULOS[r.modulo].titulo}.`
@@ -206,7 +204,8 @@ async function setSesion(sesion) {
     }
   } catch (err) {
     mensaje(`<h2>No se pudo cargar tu perfil</h2><p class="muted">${esc(err.message)}</p>
-      <button class="primary" onclick="location.reload()">Reintentar</button>`);
+      <button class="primary" id="btn-reintentar">Reintentar</button>`);
+    $("#btn-reintentar").onclick = () => location.reload();
     return;
   }
   router();

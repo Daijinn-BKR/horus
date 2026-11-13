@@ -30,6 +30,8 @@ jobs:
         run: |
           test -n "$SUPABASE_URL" || { echo "Falta el secreto SUPABASE_URL"; exit 1; }
           test -n "$SUPABASE_KEY" || { echo "Falta el secreto SUPABASE_KEY"; exit 1; }
+          # La política de seguridad (CSP) de index.html solo permite conectarse a *.supabase.co
+          case "$SUPABASE_URL" in https://*.supabase.co) ;; *) echo "::warning::SUPABASE_URL no es *.supabase.co: agrégalo a la CSP de index.html";; esac
           mkdir _site
           cp index.html sw.js manifest.webmanifest _site/
           cp -r css js icons impresora-taller _site/

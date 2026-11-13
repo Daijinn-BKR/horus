@@ -1,14 +1,13 @@
 // Horus · Buscador de Excel (solo administradores)
 // Los archivos se leen en este navegador y viven solo en memoria: no se suben a ningún
 // servidor, no se guardan en el equipo y se olvidan al salir de la pantalla.
-import { $, $$, esc, aviso, vista, nf, cargarScript, descargarCSV, alSalirDeVista } from "./nucleo.js";
+import { $, $$, esc, aviso, vista, nf, cargarScript, SCRIPTS, descargarCSV, alSalirDeVista } from "./nucleo.js";
 
 export const rutas = [
   { patron: /^#\/admin\/excel$/, acceso: "admin", render: () => buscador() },
 ];
 
 // Versión oficial de SheetJS (las del CDN npm están desactualizadas y tienen fallas de seguridad)
-const SHEETJS = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 const MESES_LARGOS = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"];
 
@@ -17,7 +16,7 @@ export const normal = (t) => String(t ?? "").toLowerCase().normalize("NFD").repl
 
 // Lee un archivo y devuelve sus hojas como matrices de celdas
 export async function leerArchivo(file) {
-  await cargarScript(SHEETJS);
+  await cargarScript(SCRIPTS.excel);
   const buf = await file.arrayBuffer();
   const wb = window.XLSX.read(buf, { type: "array", cellDates: true, dense: true });
   return wb.SheetNames.map((nombre) => ({
@@ -274,7 +273,7 @@ async function buscador() {
       if (!$("#x-fcol")) return;
       const i = +$("#x-fcol").value;
       const meses = [...new Set(tabla.filas.map((f) => f[i]?.slice(0, 7)).filter(Boolean))].sort().reverse();
-      $("#x-mes").innerHTML = `<option value="">Todos</option>` + meses.map((m) => `<option value="${m}">${fmtMes(m)}</option>`).join("");
+      $("#x-mes").innerHTML = `<option value="">Todos</option>` + meses.map((m) => `<option value="${esc(m)}">${esc(fmtMes(m))}</option>`).join("");
     };
     llenarMeses();
 

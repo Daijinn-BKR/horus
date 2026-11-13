@@ -1,6 +1,6 @@
 // Horus · Bobinado: registro de motores rebobinados (solo admin y operarios con permiso)
 import {
-  sb, H, $, $$, esc, aviso, msgError, vista, cargando, fecha, hoy, nf, descargarCSV,
+  sb, H, $, esc, dato, aviso, msgError, vista, cargando, fecha, hoy, nf, descargarCSV,
   clientesEmpresa, esAdmin,
 } from "./nucleo.js";
 
@@ -86,7 +86,7 @@ async function ficha(id) {
   cargando();
   const { data: b, error } = await sb.from("bobinados").select("*, clientes(nombre)").eq("id", id).maybeSingle();
   if (error || !b) return vista(`<a href="#/bobinado" class="volver">← Bobinado</a><p class="vacio">${error ? esc(msgError(error)) : "No se encontró el bobinado."}</p>`);
-  const fila = (n, v) => (v == null || v === "" ? "" : `<dt>${esc(n)}</dt><dd>${esc(v)}</dd>`);
+  const fila = (n, v) => (v == null || v === "" ? "" : dato(n, esc(v)));
   const valor = (c) => (c.k === "potencia" ? potenciaTxt(b) : c.t === "num" && b[c.k] != null ? nf.format(b[c.k]) : b[c.k]);
   const v = vista(`
     <a href="#/bobinado" class="volver">← Bobinado</a>
