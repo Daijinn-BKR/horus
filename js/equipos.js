@@ -2,12 +2,11 @@
 import {
   sb, H, OPC, $, $$, esc, aviso, msgError, vista, cargando, alSalirDeVista, fecha, fechaHora, hoy,
   chipEstado, unicos, linkEquipo, qrUrl, descargarCSV, clientesEmpresa, esAdmin, esStaff, esCliente,
-  abrirLector, cerrarLector,
+  abrirLector, cerrarLector, reducirImagen, MAX_VIDEO,
 } from "./nucleo.js";
 import { fichaLimitadaHTML } from "./publico.js";
 
 const BUCKET = "equipos";
-const MAX_VIDEO = 50 * 1024 * 1024; // 50 MB, límite del plan gratis
 
 const GENERAL = [
   { k: "tipo_motor", l: "Tipo de motor", op: "tipo_motor" },
@@ -344,21 +343,6 @@ async function borrarMedio(tabla, mid, ruta, equipoId) {
   await sb.storage.from(BUCKET).remove([ruta]);
   aviso("Borrado.");
   cargarMedios(equipoId);
-}
-
-// Reduce las fotos del celular (4–10 MB) a ~300 KB
-async function reducirImagen(file, max = 1600) {
-  try {
-    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
-    const c = document.createElement("canvas");
-    c.width = Math.round(bmp.width * k);
-    c.height = Math.round(bmp.height * k);
-    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
-    return (await new Promise((r) => c.toBlob(r, "image/jpeg", 0.82))) || file;
-  } catch {
-    return file;
-  }
 }
 
 async function subirArchivos(e, files, tipo) {

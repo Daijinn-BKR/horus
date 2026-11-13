@@ -1088,4 +1088,163 @@ begin
   exception when duplicate_object then null; end;
 end $$;
 
+
+-- =====================================================================
+-- ============ PROYECTOS PENDIENTES Y FOTOS/VIDEOS DE ÓRDENES ============
+-- =====================================================================
+--  Proyectos pendientes: solo el jefe eléctrico (de su empresa) y el admin los ven y editan.
+--  Cada proyecto tiene lugar, fecha estimada y una lista de materiales con precio; el total se calcula.
+--  Fotos y videos de órdenes: los sube el personal asignado o el jefe mientras la orden no esté verificada.
+
+update empresas set modulos = modulos || '{pendientes}'::text[]
+ where id = 'omega' and not ('pendientes' = any(modulos));
+
+create table if not exists proyectos_pendientes (
+  id              uuid primary key default gen_random_uuid(),
+  empresa_id      text not null references empresas(id),
+  cliente_id      uuid references clientes(id) on delete set null,
+  nombre          text not null check (length(trim(nombre)) > 0),
+  lugar           text,                 -- dónde se hará
+  fecha_estimada  date,
+  descripcion     text,
+  estado          text not null default 'Pendiente'
+                  check (estado in ('Pendiente','En curso','Terminado','Cancelado')),
+  agregar_iva     boolean not null default false,  -- los precios son netos: se suma 19% al total
+  creado_por      uuid default auth.uid() references perfiles(id) on delete set null,
+  creado_en       timestamptz not null default now(),
+  actualizado_en  timestamptz not null default now()
+);
+create index if not exists pp_empresa_idx on proyectos_pendientes (empresa_id, estado, fecha_estimada);
+
+create table if not exists proyecto_materiales (
+  id           bigint generated always as identity primary key,
+  proyecto_id  uuid not null references proyectos_pendientes(id) on delete cascade,
+  posicion     integer not null default 0,
+  descripcion  text not null check (length(trim(descripcion)) > 0),
+  unidad       text,
+  cantidad     numeric(14,3) not null default 1 check (cantidad >= 0),
+  precio       numeric(14,2) not null default 0 check (precio >= 0),   -- precio unitario
+  subtotal     numeric(18,2) generated always as (round(cantidad * precio, 2)) stored
+);
+create index if not exists pm_proyecto_idx on proyecto_materiales (proyecto_id, posicion);
+
+drop trigger if exists marcar_actualizado on proyectos_pendientes;
+create trigger marcar_actualizado before update on proyectos_pendientes
+  for each row execute function marcar_actualizado();
+
+-- Guarda el proyecto y reemplaza su lista de materiales en una sola operación.
+-- Se ejecuta con los permisos del usuario (las políticas de abajo deciden).
+create or replace function pp_guardar(p_id uuid, p_datos jsonb, p_materiales jsonb) returns uuid
+language plpgsql set search_path = public as $$
+declare v_id uuid := p_id;
+begin
+  if v_id is null then
+    insert into proyectos_pendientes (empresa_id, cliente_id, nombre, lugar, fecha_estimada, descripcion, estado, agregar_iva)
+    values (p_datos->>'empresa_id', nullif(p_datos->>'cliente_id', '')::uuid, trim(p_datos->>'nombre'),
+            nullif(trim(coalesce(p_datos->>'lugar', '')), ''), nullif(p_datos->>'fecha_estimada', '')::date,
+            nullif(trim(coalesce(p_datos->>'descripcion', '')), ''), coalesce(p_datos->>'estado', 'Pendiente'),
+            coalesce((p_datos->>'agregar_iva')::boolean, false))
+    returning id into v_id;
+  else
+    update proyectos_pendientes set
+      cliente_id = nullif(p_datos->>'cliente_id', '')::uuid, nombre = trim(p_datos->>'nombre'),
+      lugar = nullif(trim(coalesce(p_datos->>'lugar', '')), ''), fecha_estimada = nullif(p_datos->>'fecha_estimada', '')::date,
+      descripcion = nullif(trim(coalesce(p_datos->>'descripcion', '')), ''), estado = coalesce(p_datos->>'estado', estado),
+      agregar_iva = coalesce((p_datos->>'agregar_iva')::boolean, agregar_iva)
+    where id = v_id;
+    if not found then raise exception 'No se encontró el proyecto'; end if;
+    delete from proyecto_materiales where proyecto_id = v_id;
+  end if;
+  insert into proyecto_materiales (proyecto_id, posicion, descripcion, unidad, cantidad, precio)
+  select v_id, (x.n - 1)::int, trim(x.m->>'descripcion'), nullif(trim(coalesce(x.m->>'unidad', '')), ''),
+         coalesce(nullif(x.m->>'cantidad', '')::numeric, 0), coalesce(nullif(x.m->>'precio', '')::numeric, 0)
+    from jsonb_array_elements(coalesce(p_materiales, '[]'::jsonb)) with ordinality as x(m, n)
+   where length(trim(coalesce(x.m->>'descripcion', ''))) > 0;
+  return v_id;
+end $$;
+
+-- ---------- Fotos y videos de las órdenes de trabajo ----------
+create table if not exists ot_archivos (
+  id          uuid primary key default gen_random_uuid(),
+  orden_id    uuid not null references ordenes_trabajo(id) on delete cascade,
+  ruta        text not null unique,      -- <empresa>/<orden>/<archivo> en el bucket "ordenes"
+  tipo        text not null check (tipo in ('foto','video')),
+  subido_por  uuid default auth.uid() references perfiles(id) on delete set null,
+  creado_en   timestamptz not null default now()
+);
+create index if not exists ot_archivos_idx on ot_archivos (orden_id, creado_en);
+
+-- Puede subir: personal asignado o jefe, mientras la orden no esté verificada (admin siempre)
+create or replace function ot_puede_subir(p_orden uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select es_admin() or (o.estado <> 'Verificada' and es_staff(o.empresa_id)
+                          and (es_jefe(o.empresa_id) or ot_asignado(o.id)))
+                     from ordenes_trabajo o where o.id = p_orden), false);
+$$;
+-- Igual, a partir de la ruta del archivo en storage (<empresa>/<orden>/<archivo>)
+create or replace function ot_puede_subir_ruta(p_ruta text) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare v text := split_part(p_ruta, '/', 2);
+begin
+  if v !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then return false; end if;
+  return ot_puede_subir(v::uuid);
+end $$;
+-- Puede borrar: admin, o quien subió el archivo mientras la orden no esté verificada
+create or replace function ot_puede_borrar_archivo(p_ruta text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select es_admin() or exists (select 1 from ot_archivos a join ordenes_trabajo o on o.id = a.orden_id
+                                 where a.ruta = p_ruta and a.subido_por = auth.uid() and o.estado <> 'Verificada');
+$$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['proyectos_pendientes','ot_archivos'] loop
+    execute format('drop trigger if exists auditar on %I', t);
+    execute format('create trigger auditar after insert or update or delete on %I for each row execute function registrar_cambio()', t);
+  end loop;
+  foreach t in array array['proyectos_pendientes','proyecto_materiales','ot_archivos'] loop
+    execute format('alter table %I enable row level security', t);
+    execute (select coalesce(string_agg(format('drop policy if exists %I on %I;', policyname, t), ' '), 'select 1')
+               from pg_policies where schemaname = 'public' and tablename = t);
+  end loop;
+end $$;
+
+-- Proyectos: jefe de la empresa o admin; solo admin borra
+create policy "pp_ver"     on proyectos_pendientes for select to authenticated using (es_jefe(empresa_id));
+create policy "pp_crear"   on proyectos_pendientes for insert to authenticated with check (es_jefe(empresa_id));
+create policy "pp_editar"  on proyectos_pendientes for update to authenticated using (es_jefe(empresa_id)) with check (es_jefe(empresa_id));
+create policy "pp_borrar"  on proyectos_pendientes for delete to authenticated using (es_admin());
+-- Materiales: quien puede editar el proyecto edita su lista completa
+create policy "pm_todo"    on proyecto_materiales for all to authenticated
+  using (exists (select 1 from proyectos_pendientes p where p.id = proyecto_id and es_jefe(p.empresa_id)))
+  with check (exists (select 1 from proyectos_pendientes p where p.id = proyecto_id and es_jefe(p.empresa_id)));
+
+-- Archivos de órdenes
+create policy "ota_ver"    on ot_archivos for select to authenticated
+  using (exists (select 1 from ordenes_trabajo o where o.id = orden_id));
+create policy "ota_crear"  on ot_archivos for insert to authenticated
+  with check (subido_por = auth.uid() and ot_puede_subir(orden_id));
+create policy "ota_borrar" on ot_archivos for delete to authenticated using (ot_puede_borrar_archivo(ruta));
+
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('ordenes', 'ordenes', false, 52428800)
+on conflict (id) do nothing;
+
+drop policy if exists "horus_ot_leer"   on storage.objects;
+drop policy if exists "horus_ot_subir"  on storage.objects;
+drop policy if exists "horus_ot_borrar" on storage.objects;
+create policy "horus_ot_leer"   on storage.objects for select to authenticated
+  using (bucket_id = 'ordenes' and es_staff((storage.foldername(name))[1]));
+create policy "horus_ot_subir"  on storage.objects for insert to authenticated
+  with check (bucket_id = 'ordenes' and es_staff((storage.foldername(name))[1])
+              and ot_puede_subir_ruta(name));
+create policy "horus_ot_borrar" on storage.objects for delete to authenticated
+  using (bucket_id = 'ordenes' and ot_puede_borrar_archivo(name));
+
+revoke execute on function pp_guardar(uuid, jsonb, jsonb), ot_puede_subir(uuid), ot_puede_subir_ruta(text),
+  ot_puede_borrar_archivo(text) from anon, public;
+grant  execute on function pp_guardar(uuid, jsonb, jsonb), ot_puede_subir(uuid), ot_puede_subir_ruta(text),
+  ot_puede_borrar_archivo(text) to authenticated;
+
 notify pgrst, 'reload schema';

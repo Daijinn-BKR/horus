@@ -1,9 +1,11 @@
 // Horus · Órdenes de trabajo (Omega): el jefe eléctrico crea la orden y asigna personal;
-// el personal asignado la inicia y la termina con un informe; el jefe (o un admin) la verifica.
+// el personal asignado la inicia y la termina con un informe (y fotos/videos); el jefe (o un admin) la verifica.
 import {
   sb, H, OPC, $, $$, esc, aviso, msgError, vista, cargando, fecha, fmtHora, hoy, descargarCSV,
-  clientesEmpresa, esAdmin, esJefe, alSalirDeVista,
+  clientesEmpresa, esAdmin, esJefe, alSalirDeVista, reducirImagen, MAX_VIDEO,
 } from "./nucleo.js";
+
+const BUCKET = "ordenes"; // fotos y videos: <empresa>/<orden>/<archivo>
 
 export const rutas = [
   { patron: /^#\/ordenes$/, modulo: "ordenes", acceso: "staff", render: () => lista() },
@@ -55,6 +57,7 @@ async function lista() {
   const cargar = async () => {
     const { data, error } = await sb.from("ordenes_trabajo").select(SELECT)
       .eq("empresa_id", H.empresa.id).order("creado_en", { ascending: false }).limit(500);
+    if (!$("#o-lista")) return; // el usuario cambió de pantalla mientras cargaba
     if (error) {
       $("#o-lista").innerHTML = `<p class="vacio">${esc(/ordenes_trabajo/.test(error.message)
         ? "Falta ejecutar la versión nueva de supabase/schema.sql en Supabase." : msgError(error))}</p>`;
@@ -111,6 +114,7 @@ async function ficha(id) {
   const yo = soyAsignado(o), jefe = esJefe();
   const puedeTrabajar = (yo || jefe) && ["Asignada", "En curso"].includes(o.estado);
   const puedeEditar = jefe && (o.estado !== "Verificada" || esAdmin());
+  const puedeSubir = esAdmin() || (o.estado !== "Verificada" && (yo || jefe));
   const dato = (t, v) => `<dt>${t}</dt><dd>${v == null || v === "" ? '<span class="muted">—</span>' : v}</dd>`;
 
   const v = vista(`${volver}
@@ -140,6 +144,14 @@ async function ficha(id) {
       ${o.estado === "Verificada" && o.obs_verificacion ? `<p class="muted small" style="margin:8px 0 0"><b>Obs. del jefe:</b> ${esc(o.obs_verificacion)}</p>` : ""}
     </div>` : ""}
 
+    <div class="panel"><h2>Fotos y videos</h2>
+      <div id="ot-fotos" class="galeria"></div><div id="ot-videos" class="videos"></div>
+      ${puedeSubir ? `<div class="acciones" style="margin:0">
+        <label class="btn subir">+ Agregar fotos<input type="file" id="ot-in-fotos" accept="image/*" multiple></label>
+        <label class="btn subir">+ Agregar videos<input type="file" id="ot-in-videos" accept="video/*" multiple></label></div>
+        <p class="muted small" style="margin:8px 0 0">Máximo 50 MB por video.</p>` : ""}
+    </div>
+
     <div class="fila-acciones">
       ${puedeTrabajar && o.estado === "Asignada" ? `<button type="button" id="ot-iniciar">Iniciar trabajo</button>` : ""}
       ${puedeTrabajar ? `<button type="button" class="primary" id="ot-terminar">Marcar como terminado</button>` : ""}
@@ -160,6 +172,7 @@ async function ficha(id) {
       <h2>Marcar como terminado</h2>
       <label for="t-inf" class="req">¿Qué trabajo se realizó?</label><textarea id="t-inf" rows="5" required>${esc(o.informe || "")}</textarea>
       <label for="t-mat">Materiales usados</label><textarea id="t-mat" rows="2">${esc(o.materiales || "")}</textarea>
+      <label for="t-arch">Fotos o videos del trabajo</label><input type="file" id="t-arch" accept="image/*,video/*" multiple>
       <p class="muted small">Quedará esperando la verificación del jefe eléctrico.</p>
       <div class="pie"><button type="button" data-cerrar>Cancelar</button><button class="primary" type="submit">Terminar</button></div>
     </form></dialog>
@@ -179,11 +192,17 @@ async function ficha(id) {
   $$("[data-cerrar]", v).forEach((b) => (b.onclick = () => b.closest("dialog").close()));
   $("#ot-iniciar", v) && ($("#ot-iniciar", v).onclick = () => rpc("ot_iniciar", { p_orden: id }, "Orden iniciada."));
   $("#ot-terminar", v) && ($("#ot-terminar", v).onclick = () => $("#dlg-term").showModal());
-  $("#form-term", v).onsubmit = (ev) => {
+  $("#ot-in-fotos", v) && ($("#ot-in-fotos", v).onchange = (ev) => subirMedios(o, ev.target.files).then(() => cargarMedios(o)));
+  $("#ot-in-videos", v) && ($("#ot-in-videos", v).onchange = (ev) => subirMedios(o, ev.target.files).then(() => cargarMedios(o)));
+  cargarMedios(o);
+  $("#form-term", v).onsubmit = async (ev) => {
     ev.preventDefault();
     const inf = $("#t-inf").value.trim();
     if (!inf) return aviso("Escribe qué trabajo se realizó.", true);
+    const archivos = [...$("#t-arch").files];
     $("#dlg-term").close();
+    // Primero los archivos (la orden aún está abierta), después se marca como terminada
+    if (archivos.length) await subirMedios(o, archivos);
     rpc("ot_terminar", { p_orden: id, p_informe: inf, p_materiales: $("#t-mat").value.trim() || null }, "Trabajo marcado como terminado.");
   };
   $("#ot-aprobar", v) && ($("#ot-aprobar", v).onclick = () => {
@@ -200,12 +219,82 @@ async function ficha(id) {
     rpc("ot_verificar", { p_orden: id, p_aprobar: false, p_obs: obs }, "Trabajo devuelto.");
   };
   $("#ot-eliminar", v) && ($("#ot-eliminar", v).onclick = async () => {
-    if (!confirm(`¿Eliminar la orden ${num(o)}? No se puede deshacer.`)) return;
+    if (!confirm(`¿Eliminar la orden ${num(o)} con sus fotos y videos? No se puede deshacer.`)) return;
+    const arch = await sb.from("ot_archivos").select("ruta").eq("orden_id", id);
     const { error } = await sb.from("ordenes_trabajo").delete().eq("id", id);
     if (error) return aviso(msgError(error), true);
+    const rutas = (arch.data || []).map((x) => x.ruta);
+    if (rutas.length) await sb.storage.from(BUCKET).remove(rutas);
     aviso("Orden eliminada.");
     location.hash = "#/ordenes";
   });
+}
+
+// ---------- Fotos y videos ----------
+async function cargarMedios(o) {
+  const { data, error } = await sb.from("ot_archivos").select("*").eq("orden_id", o.id).order("creado_en");
+  const cf = $("#ot-fotos"), cv = $("#ot-videos");
+  if (!cf || !cv) return; // el usuario cambió de pantalla
+  if (error) {
+    cf.innerHTML = `<p class="muted small" style="grid-column:1/-1;margin:0">${esc(/ot_archivos/.test(error.message)
+      ? "Falta ejecutar la versión nueva de supabase/schema.sql en Supabase." : msgError(error))}</p>`;
+    return;
+  }
+  const firmadas = {};
+  if (data.length) {
+    const r = await sb.storage.from(BUCKET).createSignedUrls(data.map((x) => x.ruta), 3600);
+    if (!r.error) r.data.forEach((d) => { if (d.signedUrl) firmadas[d.path] = d.signedUrl; });
+  }
+  if (!$("#ot-fotos")) return;
+  const quitar = (x) => esAdmin() || (x.subido_por === H.usuario.id && o.estado !== "Verificada")
+    ? `<button type="button" class="quitar" data-id="${x.id}" data-ruta="${esc(x.ruta)}" aria-label="Borrar ${x.tipo}">✕</button>` : "";
+  const fotos = data.filter((x) => x.tipo === "foto"), videos = data.filter((x) => x.tipo === "video");
+  cf.innerHTML = fotos.map((x) => `
+    <figure><a href="${esc(firmadas[x.ruta] || "#")}" target="_blank" rel="noopener">
+      <img loading="lazy" src="${esc(firmadas[x.ruta] || "")}" alt="Foto del trabajo"></a>${quitar(x)}</figure>`).join("")
+    || (videos.length ? "" : `<p class="muted small" style="grid-column:1/-1;margin:0">Sin fotos ni videos.</p>`);
+  cv.innerHTML = videos.map((x) => `
+    <figure><video controls preload="metadata" playsinline src="${esc(firmadas[x.ruta] || "")}"></video>${quitar(x)}</figure>`).join("");
+  for (const b of $$("#vista .quitar")) b.onclick = async () => {
+    if (!confirm("¿Borrar este archivo?")) return;
+    // Primero el archivo (el permiso se revisa contra la fila), después la fila
+    const st = await sb.storage.from(BUCKET).remove([b.dataset.ruta]);
+    if (st.error) return aviso(msgError(st.error), true);
+    const { error: e } = await sb.from("ot_archivos").delete().eq("id", b.dataset.id);
+    if (e) return aviso(msgError(e), true);
+    aviso("Borrado.");
+    cargarMedios(o);
+  };
+}
+
+async function subirMedios(o, files) {
+  const lista = [...(files || [])];
+  let ok = 0;
+  for (let i = 0; i < lista.length; i++) {
+    const file = lista[i];
+    let ext = (file.name.includes(".") ? file.name.split(".").pop() : "").toLowerCase() || "bin";
+    const tipo = file.type.startsWith("video/") || /^(mp4|mov|webm|3gp|mkv|avi|m4v)$/.test(ext) ? "video" : "foto";
+    aviso(`Subiendo archivo ${i + 1} de ${lista.length}…`);
+    let blob = file;
+    if (tipo === "foto") {
+      blob = await reducirImagen(file);
+      if (blob !== file) ext = "jpg";
+    } else if (file.size > MAX_VIDEO) {
+      aviso(`“${file.name}” pesa más de 50 MB. Grábalo más corto o en menor calidad.`, true);
+      continue;
+    }
+    const ruta = `${o.empresa_id}/${o.id}/${crypto.randomUUID()}.${ext}`;
+    const up = await sb.storage.from(BUCKET).upload(ruta, blob, { contentType: blob.type || file.type || undefined });
+    if (up.error) { aviso("No se pudo subir: " + msgError(up.error), true); continue; }
+    const ins = await sb.from("ot_archivos").insert({ orden_id: o.id, ruta, tipo });
+    if (ins.error) {
+      await sb.storage.from(BUCKET).remove([ruta]);
+      aviso("No se pudo guardar: " + msgError(ins.error), true);
+      continue;
+    }
+    ok++;
+  }
+  if (ok) aviso(ok === 1 ? "Archivo subido." : `${ok} archivos subidos.`);
 }
 
 // ---------- Formulario (jefe o admin) ----------

@@ -22,9 +22,10 @@ export const MODULOS = {
   bobinado:    { titulo: "Bobinado",       ruta: "#/bobinado", permiso: "bobinado" },
   precios:     { titulo: "Lista de precios", ruta: "#/precios" },
   ordenes:     { titulo: "Órdenes de trabajo", ruta: "#/ordenes" },
+  pendientes:  { titulo: "Pendientes",     ruta: "#/pendientes", soloJefe: true },
 };
 // Módulos que nunca ven los clientes
-export const SOLO_PERSONAL = ["inventario", "bobinado", "precios", "ordenes"];
+export const SOLO_PERSONAL = ["inventario", "bobinado", "precios", "ordenes", "pendientes"];
 // Permisos especiales que el admin da a cada operario
 export const PERMISOS = { bobinado: "Bobinado" };
 export const ROLES = { admin: "Administrador", jefe: "Jefe eléctrico", operario: "Operario", cliente: "Cliente", pendiente: "Sin acceso" };
@@ -44,7 +45,8 @@ export const tienePermiso = (p) => esAdmin() || (ROLES_EMPRESA.includes(rol()) &
 // Módulos que ve el usuario en la empresa activa
 export function modulosVisibles() {
   const emp = H.empresa?.modulos || [];
-  if (esStaff()) return emp.filter((m) => MODULOS[m] && (!MODULOS[m].permiso || tienePermiso(MODULOS[m].permiso)));
+  if (esStaff()) return emp.filter((m) => MODULOS[m] && (!MODULOS[m].permiso || tienePermiso(MODULOS[m].permiso))
+    && (!MODULOS[m].soloJefe || esJefe()));
   if (esCliente()) {
     const cli = H.cliente?.modulos || [];
     return emp.filter((m) => !SOLO_PERSONAL.includes(m) && cli.includes(m) && MODULOS[m]);
@@ -193,6 +195,23 @@ export function olvidarClientes() { for (const k in cacheClientes) delete cacheC
 export function opcionesServicio() {
   const t = OPC.tipos_servicio || {};
   return t[H.empresa?.id] || ["Otros"];
+}
+
+// ---------- Fotos y videos ----------
+export const MAX_VIDEO = 50 * 1024 * 1024; // 50 MB, límite del plan gratis
+// Reduce las fotos del celular (4–10 MB) a ~300 KB
+export async function reducirImagen(file, max = 1600) {
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * k);
+    c.height = Math.round(bmp.height * k);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    return (await new Promise((r) => c.toBlob(r, "image/jpeg", 0.82))) || file;
+  } catch {
+    return file;
+  }
 }
 
 // Carga un script externo una sola vez (Chart.js, lector QR)

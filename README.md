@@ -10,7 +10,8 @@ Sistema único que reemplaza a las 4 apps anteriores:
 | **Sala de bombas** (ESP32: temperatura, humedad, presión, movimiento) | omega-sala-bombas | Omega |
 | **Bobinado** (ficha técnica de motores rebobinados) — solo operarios con permiso | nuevo | Omega |
 | **Lista de precios** (una por mes, solo lectura, búsqueda y variación vs. mes anterior) | nuevo | Omega |
-| **Órdenes de trabajo** (el jefe eléctrico asigna trabajos, el personal los termina y el jefe los verifica) | nuevo | Omega |
+| **Órdenes de trabajo** (el jefe eléctrico asigna trabajos, el personal los termina con fotos/videos y el jefe los verifica) | nuevo | Omega |
+| **Pendientes** (proyectos por hacer: dónde, fecha estimada y lista de materiales con precio y total) — solo jefe eléctrico y admin | nuevo | Omega |
 
 En **Equipos**, cada ficha tiene **Mantención externa**: registra cuando un equipo sale a otro taller (destino,
 guía, retorno estimado) y cuando vuelve. La lista de equipos avisa cuántos están fuera y cuáles están atrasados.
@@ -35,13 +36,18 @@ Las apps originales quedaron sin cambios en `legado/` como referencia (esa carpe
 | Gestionar clientes, personal, usuarios, módulos ESP32 | Sí | No | No (solo los elige en los formularios) | No | No |
 | Bobinado | Sí | Solo con permiso | Solo si el admin le da el permiso (Usuarios → Permisos) | No | No |
 | Lista de precios | Ver y cargar/eliminar listas | Solo ver | Solo ver | No | No |
+| Pendientes (proyectos y materiales) | Ver, crear, editar y borrar | Ver, crear y editar | No | No | No |
 | Buscador de Excel | Sí | No | No | No | No |
 | Historial de cambios | Sí | No | No | No | No |
 
 - **Órdenes de trabajo**: Asignada → En curso → Terminada (quien la hizo escribe el informe) → **Verificada** por el
   jefe o un admin. Si el jefe la devuelve, vuelve a “En curso” con el motivo. Para que alguien pueda iniciar y
   terminar órdenes, su cuenta debe estar vinculada en **Administración → Personal**. Los tipos de orden son
-  provisorios: se cambian en `tipos_orden` de `js/config.example.js`.
+  provisorios: se cambian en `tipos_orden` de `js/config.example.js`. El personal asignado y el jefe pueden
+  agregar **fotos y videos** (máx. 50 MB por video) mientras la orden no esté verificada; cada uno puede borrar
+  los que subió, y el admin cualquiera.
+- **Pendientes**: cada proyecto tiene lugar, fecha estimada, estado y una lista de materiales (cantidad × precio
+  unitario = subtotal). El total se calcula solo; si los precios son netos, se marca “sumar IVA (19%)”.
 
 - **Ficha limitada** (cliente y visitante): empresa, ID, cliente, tipo de motor, voltaje, mantenimiento, estado y fechas. **No** muestra mediciones, notas, proceso, encargados, fotos ni videos. Se cambia en la función `equipo_limitado` de `supabase/schema.sql`.
 - Un operario o jefe de Lafken que escanea un QR de Omega ve la ficha limitada.
@@ -131,7 +137,7 @@ Umbrales de alarma: se editan por módulo en Administración → Sala de bombas 
 | `index.html`, `css/horus.css` | Pantalla y estilos |
 | `js/app.js` | Sesión, roles, navegación |
 | `js/nucleo.js` | Conexión a Supabase, permisos, utilidades |
-| `js/equipos.js`, `inventario.js`, `servicios.js`, `sala.js`, `bobinado.js`, `precios.js`, `ordenes.js` | Cada módulo |
+| `js/equipos.js`, `inventario.js`, `servicios.js`, `sala.js`, `bobinado.js`, `precios.js`, `ordenes.js`, `pendientes.js` | Cada módulo |
 | `js/excel.js` | Buscador de Excel (y lectura de Excel para la lista de precios) |
 | `js/admin.js` | Usuarios, clientes, personal, módulos ESP32, empresas, historial |
 | `js/publico.js` | Ficha limitada (QR) |

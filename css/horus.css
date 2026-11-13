@@ -273,3 +273,22 @@ table.tabla-precios td .chip { font-size: 12px; padding: 2px 8px; }
 .u-perms .perm:has(input:disabled) { color: var(--muted); }
 
 table.tabla td select { min-width: 130px; }
+
+/* ---------- Proyectos pendientes ---------- */
+.mat-fila { display: grid; grid-template-columns: minmax(0, 1fr) 90px 90px 120px 110px 40px; gap: 6px; align-items: center; margin-bottom: 6px; }
+.mat-fila input { margin: 0; }
+.mat-fila .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mat-cab { font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
+.mat-fila .m-quitar { padding: 4px 0; }
+@media (max-width: 640px) {
+  .mat-cab { display: none; }
+  .mat-fila { grid-template-columns: 1fr 1fr 1fr 40px; grid-template-areas: "desc desc desc quitar" "cant unid prec prec" "sub sub sub sub";
+    padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .mat-fila .m-desc { grid-area: desc; } .mat-fila .m-cant { grid-area: cant; } .mat-fila .m-unid { grid-area: unid; }
+  .mat-fila .m-prec { grid-area: prec; } .mat-fila .m-sub { grid-area: sub; } .mat-fila .m-quitar { grid-area: quitar; }
+}
+.check-linea { display: flex; align-items: center; gap: 8px; color: var(--text); margin: 14px 0 0; }
+dl.totales { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; margin: 12px 0 0; max-width: 320px; margin-left: auto;
+  font-variant-numeric: tabular-nums; }
+dl.totales dt { color: var(--muted); }
+dl.totales dd { margin: 0; text-align: right; }

@@ -11,13 +11,14 @@ import * as bobinado from "./bobinado.js";
 import * as precios from "./precios.js";
 import * as excel from "./excel.js";
 import * as ordenes from "./ordenes.js";
+import * as pendientes from "./pendientes.js";
 import * as admin from "./admin.js";
 import { renderPublico } from "./publico.js";
 
 // ---------- Rutas ----------
 // modulo: requiere ese módulo activo · acceso: "staff" | "admin" (por defecto: cualquier usuario con módulo)
 const RUTAS = [
-  ...equipos.rutas, ...inventario.rutas, ...servicios.rutas, ...sala.rutas, ...bobinado.rutas, ...precios.rutas, ...ordenes.rutas, ...excel.rutas, ...admin.rutas,
+  ...equipos.rutas, ...inventario.rutas, ...servicios.rutas, ...sala.rutas, ...bobinado.rutas, ...precios.rutas, ...ordenes.rutas, ...pendientes.rutas, ...excel.rutas, ...admin.rutas,
 ];
 
 function mostrarPantalla(cual) {
@@ -90,6 +91,9 @@ async function router() {
       const M = MODULOS[r.modulo];
       if (esStaff() && M.permiso && (H.empresa?.modulos || []).includes(r.modulo)) {
         return sinAcceso(`No tienes permiso para ${M.titulo}. Pídeselo al administrador.`);
+      }
+      if (esStaff() && M.soloJefe && (H.empresa?.modulos || []).includes(r.modulo)) {
+        return sinAcceso(`${M.titulo} es solo para el jefe eléctrico y los administradores.`);
       }
       return sinAcceso(esCliente()
         ? `No tienes habilitado el módulo ${MODULOS[r.modulo].titulo}.`
