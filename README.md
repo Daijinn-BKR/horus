@@ -52,6 +52,9 @@ Las apps originales quedaron sin cambios en `legado/` como referencia (esa carpe
   provisorios: se cambian en `tipos_orden` de `js/config.example.js`. El personal asignado y el jefe pueden
   agregar **fotos y videos** (máx. 50 MB por video) mientras la orden no esté verificada; cada uno puede borrar
   los que subió, y el admin cualquiera.
+- **Servicios** (Lafken): cada visita lleva su **IV** (informe de visita, 4 números o más), el **número de visitas**
+  del servicio y **una foto**. Si el servicio tiene más visitas, la tarjeta muestra “Iniciar segunda visita” (tercera…),
+  que abre la visita siguiente con el mismo cliente, tipo y personal.
 - **Sanitización de estanques** (Lafken): tres pestañas. **Cotizado**: dónde, cliente y cuántos estanques.
   Cuando se aprueba, el supervisor o un admin la pasa a **Coordinado**, donde se anota quién va, cuándo y cuántos
   estanques quedan por hacer (cualquier operario de Lafken lo puede actualizar). Solo el supervisor o un admin la pasa

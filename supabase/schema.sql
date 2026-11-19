@@ -1341,6 +1341,36 @@ call horus_preparar_rls(array['rut_clientes']);
 create policy "rutc_ver" on rut_clientes for select to authenticated using (es_admin());
 
 -- =====================================================================
+--  Servicios: número de visitas, informe de visita (IV) y una foto por visita.
+--  Cada visita es un servicio; las siguientes apuntan a la primera (serie_id).
+-- =====================================================================
+alter table servicios add column if not exists iv text;                 -- informe de visita
+alter table servicios add column if not exists visita integer not null default 1;   -- esta es la visita N…
+alter table servicios add column if not exists visitas integer not null default 1;  -- …de M
+alter table servicios add column if not exists serie_id uuid references servicios(id) on delete set null;
+alter table servicios add column if not exists foto text;               -- ruta en el bucket "servicios"
+alter table servicios drop constraint if exists servicios_iv_valido;
+alter table servicios add constraint servicios_iv_valido check (iv is null or iv ~ '^[0-9]{4,}$');
+alter table servicios drop constraint if exists servicios_visitas_validas;
+alter table servicios add constraint servicios_visitas_validas check (visita >= 1 and visitas >= visita);
+-- Una sola "visita 2" por serie
+create unique index if not exists servicios_visita_idx on servicios ((coalesce(serie_id, id)), visita);
+
+-- Bucket privado para la foto de cada visita. Ruta: <empresa>/<archivo>
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('servicios', 'servicios', false, 10485760)
+on conflict (id) do nothing;
+drop policy if exists "horus_srv_leer"   on storage.objects;
+drop policy if exists "horus_srv_subir"  on storage.objects;
+drop policy if exists "horus_srv_borrar" on storage.objects;
+create policy "horus_srv_leer"   on storage.objects for select to authenticated
+  using (bucket_id = 'servicios' and es_staff((storage.foldername(name))[1]));
+create policy "horus_srv_subir"  on storage.objects for insert to authenticated
+  with check (bucket_id = 'servicios' and es_staff((storage.foldername(name))[1]));
+create policy "horus_srv_borrar" on storage.objects for delete to authenticated
+  using (bucket_id = 'servicios' and (es_admin() or owner_id = auth.uid()::text));
+
+-- =====================================================================
 -- ============ INTEGRIDAD: EMPRESAS, AUTORES Y TIPOS DE ARCHIVO ============
 -- =====================================================================
 
@@ -1416,7 +1446,7 @@ begin
 end $$;
 
 -- Los buckets solo aceptan fotos y videos (nada de páginas web u otros archivos)
-update storage.buckets set allowed_mime_types = array['image/*', 'video/*'] where id in ('equipos', 'ordenes');
+update storage.buckets set allowed_mime_types = array['image/*', 'video/*'] where id in ('equipos', 'ordenes', 'servicios');
 
 revoke all on function ruta_registrada(text) from public, anon;
 grant execute on function ruta_registrada(text) to authenticated;
