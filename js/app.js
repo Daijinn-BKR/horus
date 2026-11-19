@@ -1,6 +1,6 @@
 // Horus · arranque, sesión, navegación y rutas
 import {
-  sb, H, configurado, MODULOS, ROLES, $, esc, modulosVisibles, moduloActivo,
+  sb, H, configurado, MODULOS, nombreRol, $, esc, modulosVisibles, moduloActivo,
   esAdmin, esStaff, esJefe, esCliente, limpiarVista, cerrarLector, sinAcceso, olvidarClientes,
 } from "./nucleo.js";
 import * as equipos from "./equipos.js";
@@ -12,13 +12,14 @@ import * as precios from "./precios.js";
 import * as excel from "./excel.js";
 import * as ordenes from "./ordenes.js";
 import * as pendientes from "./pendientes.js";
+import * as sanitizacion from "./sanitizacion.js";
 import * as admin from "./admin.js";
 import { renderPublico } from "./publico.js";
 
 // ---------- Rutas ----------
 // modulo: requiere ese módulo activo · acceso: "staff" | "jefe" | "admin" (por defecto: cualquier usuario con módulo)
 const RUTAS = [
-  ...equipos.rutas, ...inventario.rutas, ...servicios.rutas, ...sala.rutas, ...bobinado.rutas, ...precios.rutas, ...ordenes.rutas, ...pendientes.rutas, ...excel.rutas, ...admin.rutas,
+  ...equipos.rutas, ...inventario.rutas, ...servicios.rutas, ...sala.rutas, ...bobinado.rutas, ...precios.rutas, ...ordenes.rutas, ...pendientes.rutas, ...sanitizacion.rutas, ...excel.rutas, ...admin.rutas,
 ];
 
 function mostrarPantalla(cual) {
@@ -117,7 +118,7 @@ function pintarNav() {
   pintarEmpresas();
   const p = H.perfil;
   const donde = esAdmin() ? "" : esCliente() ? H.cliente?.nombre : H.empresa?.nombre;
-  $("#quien").innerHTML = `${esc(p.nombre || p.email)}<br>${esc(ROLES[p.rol])}${donde ? " · " + esc(donde) : ""}`;
+  $("#quien").innerHTML = `${esc(p.nombre || p.email)}<br>${esc(nombreRol(p.rol, H.empresa?.id))}${donde ? " · " + esc(donde) : ""}`;
   document.documentElement.style.setProperty("--accent", H.empresa?.color || "");
   if (!H.empresa?.color) document.documentElement.style.removeProperty("--accent");
 }

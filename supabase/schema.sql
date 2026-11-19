@@ -6,7 +6,7 @@
 --    admin     → acceso total a ambas empresas (crear, editar, borrar, usuarios)
 --    jefe      → jefe eléctrico: lo mismo que un operario de SU empresa, y además crea
 --                órdenes de trabajo, asigna personal y verifica los trabajos terminados.
---                No borra nada.
+--                En Lafken es el supervisor: cambia el estado de las sanitizaciones. No borra nada.
 --    operario  → todo dentro de SU empresa, pero sin borrar y sin editar
 --                clientes, personal, usuarios ni dispositivos
 --    cliente   → solo lectura de SUS equipos, servicios y sala de bombas
@@ -1233,6 +1233,74 @@ grant  execute on function pp_guardar(uuid, jsonb, jsonb), ot_puede_subir(uuid),
   ot_puede_borrar_archivo(text) to authenticated;
 
 -- =====================================================================
+--  Sanitización de estanques (Lafken): Cotizado → Coordinado → Finalizado.
+--  El personal de la empresa crea la cotización y actualiza la coordinación (quién va, cuándo,
+--  cuántos estanques quedan). Solo el supervisor (rol "jefe" de Lafken) o un admin cambia el estado.
+--  Solo admin borra.
+-- =====================================================================
+update empresas set modulos = modulos || '{sanitizacion}'::text[]
+ where id = 'lafken' and not ('sanitizacion' = any(modulos));
+
+create table if not exists sanitizaciones (
+  id                    uuid primary key default gen_random_uuid(),
+  empresa_id            text not null references empresas(id),
+  cliente_id            uuid not null references clientes(id),
+  lugar                 text not null check (length(trim(lugar)) > 0),   -- dónde es
+  estanques             integer not null check (estanques > 0),          -- cuántos se harán
+  detalle               text,
+  estado                text not null default 'Cotizado' check (estado in ('Cotizado','Coordinado','Finalizado')),
+  -- Coordinación
+  personal              text,            -- quién irá
+  fecha_programada      date,            -- cuándo se hará
+  estanques_pendientes  integer,         -- cuántos quedan por hacer
+  creado_por            uuid default auth.uid() references perfiles(id) on delete set null,
+  creado_en             timestamptz not null default now(),
+  actualizado_en        timestamptz not null default now(),
+  check (estanques_pendientes between 0 and estanques)
+);
+create index if not exists san_empresa_idx on sanitizaciones (empresa_id, estado, fecha_programada);
+
+drop trigger if exists marcar_actualizado on sanitizaciones;
+create trigger marcar_actualizado before update on sanitizaciones
+  for each row execute function marcar_actualizado();
+
+-- Estados: se crea en Cotizado y avanza un paso a la vez, solo por el supervisor o admin.
+-- Una sanitización finalizada solo la edita el supervisor o admin. Sin sesión (SQL Editor) no se revisa.
+create or replace function san_proteger() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then return new; end if;
+  if tg_op = 'INSERT' then
+    new.estado := 'Cotizado';
+    return new;
+  end if;
+  new.empresa_id := old.empresa_id;
+  if old.estado = 'Finalizado' and not es_jefe(old.empresa_id) then
+    raise exception 'Esta sanitización ya está finalizada';
+  end if;
+  if new.estado is distinct from old.estado then
+    if not es_jefe(old.empresa_id) then
+      raise exception 'Solo el supervisor o un administrador puede cambiar el estado';
+    end if;
+    if (old.estado, new.estado) not in (('Cotizado','Coordinado'), ('Coordinado','Finalizado')) then
+      raise exception 'Cambio de estado no permitido: % → %', old.estado, new.estado;
+    end if;
+    if new.estado = 'Coordinado' then new.estanques_pendientes := coalesce(new.estanques_pendientes, new.estanques); end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists san_proteger on sanitizaciones;
+create trigger san_proteger before insert or update on sanitizaciones
+  for each row execute function san_proteger();
+
+call horus_auditar(array['sanitizaciones']);
+call horus_preparar_rls(array['sanitizaciones']);
+create policy "san_ver"    on sanitizaciones for select to authenticated using (es_staff(empresa_id));
+create policy "san_crear"  on sanitizaciones for insert to authenticated with check (es_staff(empresa_id));
+create policy "san_editar" on sanitizaciones for update to authenticated using (es_staff(empresa_id)) with check (es_staff(empresa_id));
+create policy "san_borrar" on sanitizaciones for delete to authenticated using (es_admin());
+
+-- =====================================================================
 -- ============ INTEGRIDAD: EMPRESAS, AUTORES Y TIPOS DE ARCHIVO ============
 -- =====================================================================
 
@@ -1287,7 +1355,7 @@ end $$;
 do $$
 declare t text; r record;
 begin
-  foreach t in array array['equipos','servicios','ordenes_trabajo','proyectos_pendientes','bobinados','dispositivos'] loop
+  foreach t in array array['equipos','servicios','ordenes_trabajo','proyectos_pendientes','bobinados','dispositivos','sanitizaciones'] loop
     execute format('drop trigger if exists cliente_empresa on %I', t);
     execute format('create trigger cliente_empresa before insert or update on %I for each row execute function cliente_de_la_empresa()', t);
   end loop;
@@ -1299,6 +1367,7 @@ begin
                                  ('bobinados','creado_por',''), ('listas_precios','cargado_por',''),
                                  ('ordenes_trabajo','creado_por',''), ('mantenciones_externas','enviado_por',''),
                                  ('proyectos_pendientes','creado_por',''), ('ot_archivos','subido_por',''),
+                                 ('sanitizaciones','creado_por',''),
                                  ('movimientos','usuario','email')) as x(tabla, columna, tipo) loop
     execute format('drop trigger if exists fijar_autor on %I', r.tabla);
     execute format('create trigger fijar_autor before insert or update on %I for each row execute function fijar_autor(%L, %L)',

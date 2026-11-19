@@ -15,7 +15,7 @@ export const rutas = [
 ];
 
 const SECCIONES = [
-  ["usuarios", "Usuarios", "Crear cuentas y asignar rol: administrador, jefe eléctrico, operario o cliente."],
+  ["usuarios", "Usuarios", "Crear cuentas y asignar rol: administrador, jefe eléctrico / supervisor, operario o cliente."],
   ["clientes", "Clientes", "Clientes de la empresa activa y qué módulos puede ver cada uno."],
   ["personal", "Personal", "Trabajadores que se asignan a los servicios y a las órdenes de trabajo."],
   ["dispositivos", "Sala de bombas", "Módulos ESP32: a qué cliente pertenecen, clave y umbrales de alarma."],
@@ -51,6 +51,7 @@ async function usuarios() {
   const v = vista(cabecera("Usuarios", `<button class="primary" id="btn-nuevo">+ Nuevo usuario</button>`) + `
     <p class="muted small">Operario: ve y edita todo lo de su empresa, pero no borra ni gestiona clientes, personal o usuarios.
       Jefe eléctrico: lo mismo que un operario, y además crea órdenes de trabajo, asigna personal y verifica los trabajos terminados (tampoco borra).
+      En Lafken el jefe es el <b>Supervisor</b>: pasa las sanitizaciones de cotizado a coordinado y de coordinado a finalizado.
       Los <b>permisos</b> (por ejemplo Bobinado) se dan a cada operario o jefe por separado.
       Cliente: solo lectura de sus equipos, servicios y sala de bombas.</p>
     <div class="tabla-wrap"><table class="tabla">

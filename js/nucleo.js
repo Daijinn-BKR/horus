@@ -23,12 +23,15 @@ export const MODULOS = {
   precios:     { titulo: "Lista de precios", ruta: "#/precios" },
   ordenes:     { titulo: "Órdenes de trabajo", ruta: "#/ordenes" },
   pendientes:  { titulo: "Pendientes",     ruta: "#/pendientes", soloJefe: true },
+  sanitizacion: { titulo: "Sanitización",  ruta: "#/sanitizacion" },
 };
 // Módulos que nunca ven los clientes
-export const SOLO_PERSONAL = ["inventario", "bobinado", "precios", "ordenes", "pendientes"];
+export const SOLO_PERSONAL = ["inventario", "bobinado", "precios", "ordenes", "pendientes", "sanitizacion"];
 // Permisos especiales que el admin da a cada operario
 export const PERMISOS = { bobinado: "Bobinado" };
-export const ROLES = { admin: "Administrador", jefe: "Jefe eléctrico", operario: "Operario", cliente: "Cliente", pendiente: "Sin acceso" };
+export const ROLES = { admin: "Administrador", jefe: "Jefe eléctrico / Supervisor", operario: "Operario", cliente: "Cliente", pendiente: "Sin acceso" };
+// El rol jefe en Lafken es el supervisor
+export const nombreRol = (r, empresa) => (r === "jefe" ? (empresa === "lafken" ? "Supervisor" : "Jefe eléctrico") : ROLES[r]);
 // Roles que pertenecen a una empresa (necesitan empresa asignada y pueden tener permisos)
 export const ROLES_EMPRESA = ["jefe", "operario"];
 
