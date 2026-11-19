@@ -1301,6 +1301,46 @@ create policy "san_editar" on sanitizaciones for update to authenticated using (
 create policy "san_borrar" on sanitizaciones for delete to authenticated using (es_admin());
 
 -- =====================================================================
+--  RUT Clientes (Administración): nombre, RUT, dirección y comuna de los receptores de facturas.
+--  Solo admin. Se carga desde un CSV y cada carga reemplaza la lista completa.
+-- =====================================================================
+create table if not exists rut_clientes (
+  rut         text primary key,
+  nombre      text not null,
+  direccion   text,
+  comuna      text,
+  ciudad      text,
+  archivo     text,              -- documento del que salió el dato
+  cargado_en  timestamptz not null default now()
+);
+
+create or replace function cargar_rut_clientes(p_items jsonb) returns integer
+language plpgsql security definer set search_path = public as $$
+declare n integer;
+begin
+  if not es_admin() then
+    raise exception 'Solo un administrador puede cargar RUT de clientes' using errcode = '42501';
+  end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'El archivo no tiene filas';
+  end if;
+  delete from rut_clientes where true;
+  insert into rut_clientes (rut, nombre, direccion, comuna, ciudad, archivo)
+  select trim(i->>'rut'), trim(i->>'nombre'), nullif(trim(i->>'direccion'), ''), nullif(trim(i->>'comuna'), ''),
+         nullif(trim(i->>'ciudad'), ''), nullif(trim(i->>'archivo'), '')
+    from jsonb_array_elements(p_items) i
+   where nullif(trim(i->>'rut'), '') is not null and nullif(trim(i->>'nombre'), '') is not null
+  on conflict (rut) do nothing;   -- RUT repetido: queda el primero
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke execute on function cargar_rut_clientes(jsonb) from anon, public;
+grant  execute on function cargar_rut_clientes(jsonb) to authenticated;
+
+call horus_preparar_rls(array['rut_clientes']);
+create policy "rutc_ver" on rut_clientes for select to authenticated using (es_admin());
+
+-- =====================================================================
 -- ============ INTEGRIDAD: EMPRESAS, AUTORES Y TIPOS DE ARCHIVO ============
 -- =====================================================================
 

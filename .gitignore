@@ -12,3 +12,6 @@ legado/
 __pycache__/
 # Caché local de la CLI de Supabase
 supabase/.temp/
+
+# Datos de clientes (se cargan en Administración → RUT Clientes, no van al repositorio)
+receptores.csv

@@ -1,8 +1,9 @@
 // Horus · Administración (solo rol admin)
 import {
   sb, H, MODULOS, ROLES, ROLES_EMPRESA, PERMISOS, $, $$, esc, aviso, msgError, vista, cargando, fmtHora,
-  clientesEmpresa, olvidarClientes, normalizarRut, normalizarTelefono, validarCampo,
+  clientesEmpresa, olvidarClientes, normalizarRut, normalizarTelefono, validarCampo, msgCarga, nf,
 } from "./nucleo.js";
+import { leerArchivo, separarEncabezado, normal } from "./excel.js";
 
 export const rutas = [
   { patron: /^#\/admin$/, acceso: "admin", render: () => menu() },
@@ -12,6 +13,7 @@ export const rutas = [
   { patron: /^#\/admin\/dispositivos$/, acceso: "admin", render: () => dispositivos() },
   { patron: /^#\/admin\/empresas$/, acceso: "admin", render: () => empresas() },
   { patron: /^#\/admin\/auditoria$/, acceso: "admin", render: () => auditoria() },
+  { patron: /^#\/admin\/ruts$/, acceso: "admin", render: () => rutClientes() },
 ];
 
 const SECCIONES = [
@@ -21,6 +23,7 @@ const SECCIONES = [
   ["dispositivos", "Sala de bombas", "Módulos ESP32: a qué cliente pertenecen, clave y umbrales de alarma."],
   ["empresas", "Empresas y módulos", "Qué módulos usa cada empresa."],
   ["auditoria", "Historial de cambios", "Quién creó, editó o borró cada registro."],
+  ["ruts", "RUT Clientes", "Busca clientes por nombre, RUT o comuna. La lista se carga desde un CSV."],
   ["excel", "Buscador de Excel", "Abre planillas (compras, ventas…) y búscalas por mes, empresa o texto. No se guardan."],
 ];
 const cabecera = (titulo, extra = "") =>
@@ -291,6 +294,54 @@ async function clientes() {
     aviso("Cliente eliminado.");
     clientes();
   }));
+}
+
+// ---------- RUT Clientes ----------
+const soloDigitos = (t) => String(t ?? "").replace(/[^0-9kK]/g, "").toLowerCase();
+async function rutClientes() {
+  cargando();
+  const { data, error } = await sb.from("rut_clientes").select("*").order("nombre");
+  const v = vista(cabecera("RUT Clientes", `<button class="primary" id="rc-cargar">Cargar CSV</button>`) + `
+    <input id="rc-archivo" type="file" accept=".csv,.xlsx,.xls" hidden>
+    <div class="filtros"><input id="rc-buscar" type="search" placeholder="Nombre, RUT o comuna…" aria-label="Buscar" autocomplete="off"></div>
+    <p class="muted small" id="rc-conteo"></p>
+    <div id="rc-res"></div>`, true);
+  if (error) return ($("#rc-res", v).innerHTML = `<p class="vacio">${esc(msgCarga(error, "rut_clientes"))}</p>`);
+
+  const pintar = () => {
+    const q = normal($("#rc-buscar").value), qd = soloDigitos(q);
+    // el RUT se compara sin puntos ni guion: "71551500" encuentra "71.551.500-8"
+    const l = !q ? data : data.filter((c) => normal(`${c.nombre} ${c.comuna} ${c.ciudad} ${c.rut}`).includes(q)
+      || (qd.length >= 3 && /^[0-9kK.\- ]+$/.test(q) && soloDigitos(c.rut).includes(qd)));
+    $("#rc-conteo").textContent = data.length ? `${nf.format(l.length)} de ${nf.format(data.length)} clientes` : "";
+    $("#rc-res").innerHTML = l.length ? `<div class="tabla-wrap"><table class="tabla">
+      <thead><tr><th>RUT</th><th>Nombre</th><th>Dirección</th><th>Comuna</th><th>Ciudad</th></tr></thead>
+      <tbody>${l.map((c) => `<tr><td style="white-space:nowrap">${esc(c.rut)}</td><td>${esc(c.nombre)}</td>
+        <td>${esc(c.direccion || "")}</td><td>${esc(c.comuna || "")}</td><td>${esc(c.ciudad || "")}</td></tr>`).join("")}</tbody>
+    </table></div>` : `<p class="vacio">${data.length ? "Sin resultados." : "Todavía no hay datos. Usa “Cargar CSV”."}</p>`;
+  };
+  $("#rc-buscar", v).oninput = pintar;
+  $("#rc-cargar", v).onclick = () => $("#rc-archivo", v).click();
+  $("#rc-archivo", v).onchange = async (ev) => {
+    const f = ev.target.files[0];
+    ev.target.value = "";
+    if (!f) return;
+    try {
+      const { columnas, datos } = separarEncabezado((await leerArchivo(f))[0].filas);
+      const col = (n) => columnas.findIndex((c) => normal(c) === n);
+      const idx = Object.fromEntries(["rut", "nombre", "direccion", "comuna", "ciudad", "archivo"].map((n) => [n, col(n)]));
+      if (idx.rut < 0 || idx.nombre < 0) throw new Error("El archivo debe tener las columnas rut y nombre.");
+      const items = datos.map((fila) => Object.fromEntries(Object.entries(idx).map(([k, i]) => [k, i < 0 || fila[i] == null ? null : String(fila[i]).trim()])))
+        .filter((x) => x.rut && x.nombre);
+      if (!confirm(`¿Reemplazar la lista actual (${nf.format(data.length)}) por ${nf.format(items.length)} clientes de “${f.name}”?`)) return;
+      const { data: n, error: e } = await sb.rpc("cargar_rut_clientes", { p_items: items });
+      if (e) return aviso(msgError(e), true);
+      aviso(`Lista cargada: ${nf.format(n)} clientes${n < items.length ? ` (${items.length - n} RUT repetidos omitidos)` : ""}.`);
+      rutClientes();
+    } catch (e) { aviso("No se pudo leer el archivo: " + e.message, true); }
+  };
+  pintar();
+  $("#rc-buscar", v).focus();
 }
 
 // ---------- Personal ----------
