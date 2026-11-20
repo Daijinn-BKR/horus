@@ -85,7 +85,8 @@ button.logo-empresa.on::after { content: ""; position: absolute; left: 8px; righ
 .logo-txt { font-weight: 700; font-size: 14px; color: var(--text); }
 :root[data-theme="dark"] .empresas img { filter: brightness(0) invert(1); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .empresas img { filter: brightness(0) invert(1); } }
-.btn-tema { min-width: 38px; font-size: 16px; }
+.btn-tema { min-width: 38px; display: inline-flex; align-items: center; justify-content: center; }
+.btn-tema svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 520px) {
   .barra .empresas img { height: 24px; }
   .barra .izq { gap: 10px; }
