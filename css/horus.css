@@ -293,3 +293,10 @@ dl.totales { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; marg
   font-variant-numeric: tabular-nums; }
 dl.totales dt { color: var(--muted); }
 dl.totales dd { margin: 0; text-align: right; }
+
+/* ---------- Menú de Administración en iconos ---------- */
+.iconos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-top: 8px; }
+.tarjeta.icono { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  text-align: center; padding: 20px 12px; min-height: 120px; }
+.tarjeta.icono svg { width: 36px; height: 36px; fill: none; stroke: var(--accent); stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round; }

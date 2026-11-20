@@ -16,23 +16,33 @@ export const rutas = [
   { patron: /^#\/admin\/ruts$/, acceso: "admin", render: () => rutClientes() },
 ];
 
+// [ruta, título, descripción (se ve al pasar el mouse), icono SVG de línea]
 const SECCIONES = [
-  ["usuarios", "Usuarios", "Crear cuentas y asignar rol: administrador, jefe eléctrico / supervisor, operario o cliente."],
-  ["clientes", "Clientes", "Clientes de la empresa activa y qué módulos puede ver cada uno."],
-  ["personal", "Personal", "Trabajadores que se asignan a los servicios y a las órdenes de trabajo."],
-  ["dispositivos", "Sala de bombas", "Módulos ESP32: a qué cliente pertenecen, clave y umbrales de alarma."],
-  ["empresas", "Empresas y módulos", "Qué módulos usa cada empresa."],
-  ["auditoria", "Historial de cambios", "Quién creó, editó o borró cada registro."],
-  ["ruts", "RUT Clientes", "Busca clientes por nombre, RUT o comuna. La lista se carga desde un CSV."],
-  ["excel", "Buscador de Excel", "Abre planillas (compras, ventas…) y búscalas por mes, empresa o texto. No se guardan."],
+  ["usuarios", "Usuarios", "Crear cuentas y asignar rol: administrador, jefe eléctrico / supervisor, operario o cliente.",
+    '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>'],
+  ["clientes", "Clientes", "Clientes de la empresa activa y qué módulos puede ver cada uno.",
+    '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>'],
+  ["personal", "Personal", "Trabajadores que se asignan a los servicios y a las órdenes de trabajo.",
+    '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M17 11l2 2 4-4"/>'],
+  ["dispositivos", "Sala de bombas", "Módulos ESP32: a qué cliente pertenecen, clave y umbrales de alarma.",
+    '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>'],
+  ["empresas", "Empresas y módulos", "Qué módulos usa cada empresa.",
+    '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>'],
+  ["auditoria", "Historial de cambios", "Quién creó, editó o borró cada registro.",
+    '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'],
+  ["ruts", "RUT Clientes", "Busca clientes por nombre, RUT o comuna. La lista se carga desde un CSV.",
+    '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>'],
+  ["excel", "Buscador de Excel", "Abre planillas (compras, ventas…) y búscalas por mes, empresa o texto. No se guardan.",
+    '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>'],
 ];
 const cabecera = (titulo, extra = "") =>
   `<a href="#/admin" class="volver">← Administración</a><div class="cabecera"><h1>${titulo}</h1>${extra}</div>`;
 const empresaActiva = () => `<span class="chip info">${esc(H.empresa?.nombre)}</span>`;
 
 function menu() {
-  vista(`<h1>Administración</h1><div class="lista">
-    ${SECCIONES.map(([k, t, d]) => `<a class="tarjeta" href="#/admin/${k}"><strong>${t}</strong><div class="muted small">${d}</div></a>`).join("")}
+  vista(`<h1>Administración</h1><div class="iconos">
+    ${SECCIONES.map(([k, t, d, svg]) => `<a class="tarjeta icono" href="#/admin/${k}" title="${d}">
+      <svg viewBox="0 0 24 24" aria-hidden="true">${svg}</svg><strong>${t}</strong></a>`).join("")}
   </div>`);
 }
 
