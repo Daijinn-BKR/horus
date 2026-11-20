@@ -18,7 +18,7 @@ En **Equipos**, cada ficha tiene **Mantención externa**: registra cuando un equ
 guía, retorno estimado) y cuando vuelve. La lista de equipos avisa cuántos están fuera y cuáles están atrasados.
 
 El administrador también tiene **RUT Clientes** (Administración): busca por nombre, RUT (con o sin puntos) o comuna.
-Debajo, el desplegable **Facturas asociadas** lista las facturas de los clientes encontrados.
+Al hacer clic en un RUT se abre un mini menú con sus **facturas asociadas**.
 La lista se carga desde un CSV con columnas `rut, nombre, direccion, comuna, ciudad`, `archivo` y
 `facturas_asociadas` (varias separadas por ` | `);
 si un RUT aparece en varias filas, se juntan sus facturas. Cada carga reemplaza la anterior. El CSV no se sube al repositorio.

@@ -330,8 +330,9 @@ async function rutClientes() {
     <div class="filtros"><input id="rc-buscar" type="search" placeholder="Nombre, RUT o comuna…" aria-label="Buscar" autocomplete="off"></div>
     <p class="muted small" id="rc-conteo"></p>
     <div id="rc-res"></div>
-    <details class="panel" id="rc-facturas" style="margin-top:12px"><summary><strong>Facturas asociadas</strong> <span class="muted small" id="rc-fconteo"></span></summary>
-      <div id="rc-fres" style="margin-top:8px"></div></details>`, true);
+    <dialog id="rc-dlg"><h2 id="rc-dlg-t"></h2><p class="muted small" id="rc-dlg-s"></p>
+      <ul id="rc-dlg-l" style="max-height:55vh;overflow:auto;margin:8px 0 0;padding-left:20px"></ul>
+      <div class="pie"><button type="button" id="rc-dlg-x">Cerrar</button></div></dialog>`, true);
   if (error) return ($("#rc-res", v).innerHTML = `<p class="vacio">${esc(msgCarga(error, "rut_clientes"))}</p>`);
 
   const pintar = () => {
@@ -342,27 +343,30 @@ async function rutClientes() {
     $("#rc-conteo").textContent = data.length ? `${nf.format(l.length)} de ${nf.format(data.length)} clientes` : "";
     $("#rc-res").innerHTML = l.length ? `<div class="tabla-wrap"><table class="tabla">
       <thead><tr><th>RUT</th><th>Nombre</th><th>Dirección</th><th>Comuna</th><th>Ciudad</th></tr></thead>
-      <tbody>${l.map((c) => `<tr><td style="white-space:nowrap">${esc(c.rut)}</td><td>${esc(c.nombre)}</td>
+      <tbody>${l.map((c, i) => `<tr><td style="white-space:nowrap"><button type="button" class="chico" data-i="${i}"
+        title="Ver facturas asociadas">${esc(c.rut)} <span class="muted small">(${(c.facturas || []).length})</span></button></td><td>${esc(c.nombre)}</td>
         <td>${esc(c.direccion || "")}</td><td>${esc(c.comuna || "")}</td><td>${esc(c.ciudad || "")}</td></tr>`).join("")}</tbody>
     </table></div>` : `<p class="vacio">${data.length ? "Sin resultados." : "Todavía no hay datos. Usa “Cargar CSV”."}</p>`;
-    // Facturas de los clientes que coinciden con la búsqueda (el desplegable conserva si está abierto o cerrado)
-    fact = l.flatMap((c) => [...(c.facturas || [])].sort(orden.compare).map((f) => [f, c]));
-    $("#rc-fconteo").textContent = `(${nf.format(fact.length)})`;
-    pintarFacturas();
+    vistos = l;
   };
-  // Se dibuja solo con el desplegable abierto. shortcut: muestra hasta 500 filas; con más, buscar para acotar
-  let fact = [];
-  const MAX_FACT = 500, orden = new Intl.Collator("es", { numeric: true });
-  const pintarFacturas = () => {
-    if (!$("#rc-facturas").open) return;
-    const ver = fact.slice(0, MAX_FACT);
-    $("#rc-fres").innerHTML = fact.length ? `${fact.length > MAX_FACT ? `<p class="muted small">Mostrando ${MAX_FACT} de ${nf.format(fact.length)}. Busca un cliente para ver solo sus facturas.</p>` : ""}
-      <div class="tabla-wrap"><table class="tabla">
-      <thead><tr><th>Factura</th><th>RUT</th><th>Cliente</th></tr></thead>
-      <tbody>${ver.map(([f, c]) => `<tr><td>${esc(f)}</td><td style="white-space:nowrap">${esc(c.rut)}</td><td>${esc(c.nombre)}</td></tr>`).join("")}</tbody>
-    </table></div>` : `<p class="muted small" style="margin:0">Sin facturas para esta búsqueda.</p>`;
+  // Clic en un RUT: mini menú con sus facturas asociadas (orden numérico: Factura 2 antes que Factura 10)
+  let vistos = [];
+  const orden = new Intl.Collator("es", { numeric: true }), dlg = $("#rc-dlg", v);
+  $("#rc-res", v).onclick = (ev) => {
+    const b = ev.target.closest("[data-i]");
+    if (!b) return;
+    const c = vistos[+b.dataset.i], f = [...(c.facturas || [])].sort(orden.compare);
+    $("#rc-dlg-t").textContent = c.nombre;
+    $("#rc-dlg-s").textContent = `${c.rut} · ${nf.format(f.length)} factura${f.length === 1 ? "" : "s"} asociada${f.length === 1 ? "" : "s"}`;
+    $("#rc-dlg-l").innerHTML = f.length ? f.map((x) => `<li>${esc(x)}</li>`).join("") : `<li class="muted">Sin facturas asociadas.</li>`;
+    dlg.showModal();
   };
-  $("#rc-facturas", v).ontoggle = pintarFacturas;
+  $("#rc-dlg-x", v).onclick = () => dlg.close();
+  // clic fuera del menú lo cierra (el borde interno del diálogo también es "el diálogo", por eso se mira la posición)
+  dlg.onclick = (ev) => {
+    const r = dlg.getBoundingClientRect();
+    if (ev.target === dlg && (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom)) dlg.close();
+  };
   $("#rc-buscar", v).oninput = pintar;
   $("#rc-cargar", v).onclick = () => $("#rc-archivo", v).click();
   $("#rc-archivo", v).onchange = async (ev) => {
