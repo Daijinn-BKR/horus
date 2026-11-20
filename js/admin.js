@@ -305,7 +305,9 @@ async function rutClientes() {
     <input id="rc-archivo" type="file" accept=".csv,.xlsx,.xls" hidden>
     <div class="filtros"><input id="rc-buscar" type="search" placeholder="Nombre, RUT o comuna…" aria-label="Buscar" autocomplete="off"></div>
     <p class="muted small" id="rc-conteo"></p>
-    <div id="rc-res"></div>`, true);
+    <div id="rc-res"></div>
+    <details class="panel" id="rc-facturas" style="margin-top:12px"><summary><strong>Facturas asociadas</strong> <span class="muted small" id="rc-fconteo"></span></summary>
+      <div id="rc-fres" style="margin-top:8px"></div></details>`, true);
   if (error) return ($("#rc-res", v).innerHTML = `<p class="vacio">${esc(msgCarga(error, "rut_clientes"))}</p>`);
 
   const pintar = () => {
@@ -319,6 +321,13 @@ async function rutClientes() {
       <tbody>${l.map((c) => `<tr><td style="white-space:nowrap">${esc(c.rut)}</td><td>${esc(c.nombre)}</td>
         <td>${esc(c.direccion || "")}</td><td>${esc(c.comuna || "")}</td><td>${esc(c.ciudad || "")}</td></tr>`).join("")}</tbody>
     </table></div>` : `<p class="vacio">${data.length ? "Sin resultados." : "Todavía no hay datos. Usa “Cargar CSV”."}</p>`;
+    // Facturas de los clientes que coinciden con la búsqueda (el desplegable conserva si está abierto o cerrado)
+    const fact = l.flatMap((c) => (c.facturas || []).map((f) => [f, c]));
+    $("#rc-fconteo").textContent = `(${nf.format(fact.length)})`;
+    $("#rc-fres").innerHTML = fact.length ? `<div class="tabla-wrap"><table class="tabla">
+      <thead><tr><th>Factura</th><th>RUT</th><th>Cliente</th></tr></thead>
+      <tbody>${fact.map(([f, c]) => `<tr><td>${esc(f)}</td><td style="white-space:nowrap">${esc(c.rut)}</td><td>${esc(c.nombre)}</td></tr>`).join("")}</tbody>
+    </table></div>` : `<p class="muted small" style="margin:0">Sin facturas para esta búsqueda.</p>`;
   };
   $("#rc-buscar", v).oninput = pintar;
   $("#rc-cargar", v).onclick = () => $("#rc-archivo", v).click();
@@ -336,7 +345,7 @@ async function rutClientes() {
       if (!confirm(`¿Reemplazar la lista actual (${nf.format(data.length)}) por ${nf.format(items.length)} clientes de “${f.name}”?`)) return;
       const { data: n, error: e } = await sb.rpc("cargar_rut_clientes", { p_items: items });
       if (e) return aviso(msgError(e), true);
-      aviso(`Lista cargada: ${nf.format(n)} clientes${n < items.length ? ` (${items.length - n} RUT repetidos omitidos)` : ""}.`);
+      aviso(`Lista cargada: ${nf.format(n)} clientes${n < items.length ? ` (${items.length - n} filas de RUT repetidos se unieron con sus facturas)` : ""}.`);
       rutClientes();
     } catch (e) { aviso("No se pudo leer el archivo: " + e.message, true); }
   };

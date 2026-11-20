@@ -18,8 +18,9 @@ En **Equipos**, cada ficha tiene **Mantención externa**: registra cuando un equ
 guía, retorno estimado) y cuando vuelve. La lista de equipos avisa cuántos están fuera y cuáles están atrasados.
 
 El administrador también tiene **RUT Clientes** (Administración): busca por nombre, RUT (con o sin puntos) o comuna.
-La lista se carga desde un CSV con columnas `rut, nombre, direccion, comuna, ciudad` (y opcional `archivo`);
-cada carga reemplaza la anterior. El CSV no se sube al repositorio.
+Debajo, el desplegable **Facturas asociadas** lista las facturas de los clientes encontrados.
+La lista se carga desde un CSV con columnas `rut, nombre, direccion, comuna, ciudad` y `archivo` (la factura);
+si un RUT aparece en varias filas, se juntan sus facturas. Cada carga reemplaza la anterior. El CSV no se sube al repositorio.
 
 Además, el administrador tiene un **Buscador de Excel** (Administración): abre planillas de compras u otras,
 las junta y permite filtrar por mes, proveedor, texto o montos, agrupar y sumar. Los archivos se leen solo

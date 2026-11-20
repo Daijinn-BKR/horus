@@ -1310,9 +1310,18 @@ create table if not exists rut_clientes (
   direccion   text,
   comuna      text,
   ciudad      text,
-  archivo     text,              -- documento del que salió el dato
+  facturas    text[] not null default '{}',   -- facturas asociadas (archivos de donde salió el dato)
   cargado_en  timestamptz not null default now()
 );
+-- Bases anteriores: la columna "archivo" (una factura) pasa a la lista "facturas"
+alter table rut_clientes add column if not exists facturas text[] not null default '{}';
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_name = 'rut_clientes' and column_name = 'archivo') then
+    update rut_clientes set facturas = array[archivo] where archivo is not null and facturas = '{}';
+    alter table rut_clientes drop column archivo;
+  end if;
+end $$;
 
 create or replace function cargar_rut_clientes(p_items jsonb) returns integer
 language plpgsql security definer set search_path = public as $$
@@ -1325,12 +1334,17 @@ begin
     raise exception 'El archivo no tiene filas';
   end if;
   delete from rut_clientes where true;
-  insert into rut_clientes (rut, nombre, direccion, comuna, ciudad, archivo)
-  select trim(i->>'rut'), trim(i->>'nombre'), nullif(trim(i->>'direccion'), ''), nullif(trim(i->>'comuna'), ''),
-         nullif(trim(i->>'ciudad'), ''), nullif(trim(i->>'archivo'), '')
-    from jsonb_array_elements(p_items) i
-   where nullif(trim(i->>'rut'), '') is not null and nullif(trim(i->>'nombre'), '') is not null
-  on conflict (rut) do nothing;   -- RUT repetido: queda el primero
+  -- RUT repetido: quedan los datos de la primera fila y se juntan todas sus facturas
+  with x as (
+    select trim(i->>'rut') as rut, trim(i->>'nombre') as nombre, nullif(trim(i->>'direccion'), '') as direccion,
+           nullif(trim(i->>'comuna'), '') as comuna, nullif(trim(i->>'ciudad'), '') as ciudad,
+           nullif(trim(i->>'archivo'), '') as archivo, o
+      from jsonb_array_elements(p_items) with ordinality as t(i, o)
+     where nullif(trim(i->>'rut'), '') is not null and nullif(trim(i->>'nombre'), '') is not null)
+  insert into rut_clientes (rut, nombre, direccion, comuna, ciudad, facturas)
+  select distinct on (rut) rut, nombre, direccion, comuna, ciudad,
+         array(select distinct y.archivo from x y where y.rut = x.rut and y.archivo is not null order by 1)
+    from x order by rut, o;
   get diagnostics n = row_count;
   return n;
 end $$;
