@@ -297,6 +297,30 @@ async function clientes() {
 }
 
 // ---------- RUT Clientes ----------
+// CSV leído aquí y no con SheetJS: SheetJS adivina el separador mirando también las filas de datos,
+// y con muchas facturas separadas por " | " elige "|". Aquí el separador sale solo de la línea de encabezados.
+function leerCSV(texto) {
+  texto = texto.replace(/^\uFEFF/, "");
+  const primera = texto.slice(0, texto.search(/\r?\n|$/));
+  const sep = [",", ";", "\t"].reduce((a, s) => (primera.split(s).length > primera.split(a).length ? s : a), ",");
+  const filas = [];
+  let fila = [], campo = "", comillas = false;
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i];
+    if (comillas) {
+      if (c !== '"') campo += c;
+      else if (texto[i + 1] === '"') { campo += '"'; i++; }
+      else comillas = false;
+    } else if (c === '"' && campo === "") comillas = true;
+    else if (c === sep) { fila.push(campo); campo = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && texto[i + 1] === "\n") i++;
+      fila.push(campo); filas.push(fila); fila = []; campo = "";
+    } else campo += c;
+  }
+  if (campo || fila.length) { fila.push(campo); filas.push(fila); }
+  return filas.filter((f) => f.some((x) => x.trim()));
+}
 const soloDigitos = (t) => String(t ?? "").replace(/[^0-9kK]/g, "").toLowerCase();
 async function rutClientes() {
   cargando();
@@ -346,7 +370,8 @@ async function rutClientes() {
     ev.target.value = "";
     if (!f) return;
     try {
-      const { columnas, datos } = separarEncabezado((await leerArchivo(f))[0].filas);
+      const filas = /\.csv$/i.test(f.name) ? leerCSV(await f.text()) : (await leerArchivo(f))[0].filas;
+      const { columnas, datos } = separarEncabezado(filas);
       const col = (n) => columnas.findIndex((c) => normal(c) === n);
       const idx = Object.fromEntries(["rut", "nombre", "direccion", "comuna", "ciudad", "archivo", "facturas_asociadas"].map((n) => [n, col(n)]));
       if (idx.rut < 0 || idx.nombre < 0) throw new Error("El archivo debe tener las columnas rut y nombre.");
