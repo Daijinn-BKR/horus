@@ -324,7 +324,8 @@ function leerCSV(texto) {
 const soloDigitos = (t) => String(t ?? "").replace(/[^0-9kK]/g, "").toLowerCase();
 async function rutClientes() {
   cargando();
-  const { data, error } = await sb.from("rut_clientes").select("*").order("nombre");
+  // Sin la columna facturas (pesa ~90% de la tabla): se piden al hacer clic en el RUT
+  const { data, error } = await sb.from("rut_clientes").select("rut, nombre, direccion, comuna, ciudad, n_facturas").order("nombre");
   const v = vista(cabecera("RUT Clientes", `<button class="primary" id="rc-cargar">Cargar CSV</button>`) + `
     <input id="rc-archivo" type="file" accept=".csv,.xlsx,.xls" hidden>
     <div class="filtros"><input id="rc-buscar" type="search" placeholder="Nombre, RUT o comuna…" aria-label="Buscar" autocomplete="off"></div>
@@ -344,7 +345,7 @@ async function rutClientes() {
     $("#rc-res").innerHTML = l.length ? `<div class="tabla-wrap"><table class="tabla">
       <thead><tr><th>RUT</th><th>Nombre</th><th>Dirección</th><th>Comuna</th><th>Ciudad</th></tr></thead>
       <tbody>${l.map((c, i) => `<tr><td style="white-space:nowrap"><button type="button" class="chico" data-i="${i}"
-        title="Ver facturas asociadas">${esc(c.rut)} <span class="muted small">(${(c.facturas || []).length})</span></button></td><td>${esc(c.nombre)}</td>
+        title="Ver facturas asociadas">${esc(c.rut)} <span class="muted small">(${c.n_facturas ?? 0})</span></button></td><td>${esc(c.nombre)}</td>
         <td>${esc(c.direccion || "")}</td><td>${esc(c.comuna || "")}</td><td>${esc(c.ciudad || "")}</td></tr>`).join("")}</tbody>
     </table></div>` : `<p class="vacio">${data.length ? "Sin resultados." : "Todavía no hay datos. Usa “Cargar CSV”."}</p>`;
     vistos = l;
@@ -352,10 +353,15 @@ async function rutClientes() {
   // Clic en un RUT: mini menú con sus facturas asociadas (orden numérico: Factura 2 antes que Factura 10)
   let vistos = [];
   const orden = new Intl.Collator("es", { numeric: true }), dlg = $("#rc-dlg", v);
-  $("#rc-res", v).onclick = (ev) => {
+  $("#rc-res", v).onclick = async (ev) => {
     const b = ev.target.closest("[data-i]");
     if (!b) return;
-    const c = vistos[+b.dataset.i], f = [...(c.facturas || [])].sort(orden.compare);
+    const c = vistos[+b.dataset.i];
+    b.disabled = true;
+    const { data: r, error: e } = await sb.from("rut_clientes").select("facturas").eq("rut", c.rut).maybeSingle();
+    b.disabled = false;
+    if (e) return aviso(msgError(e), true);
+    const f = [...(r?.facturas || [])].sort(orden.compare);
     $("#rc-dlg-t").textContent = c.nombre;
     $("#rc-dlg-s").textContent = `${c.rut} · ${nf.format(f.length)} factura${f.length === 1 ? "" : "s"} asociada${f.length === 1 ? "" : "s"}`;
     $("#rc-dlg-l").innerHTML = f.length ? f.map((x) => `<li>${esc(x)}</li>`).join("") : `<li class="muted">Sin facturas asociadas.</li>`;

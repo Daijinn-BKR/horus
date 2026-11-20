@@ -1322,6 +1322,8 @@ begin
     alter table rut_clientes drop column archivo;
   end if;
 end $$;
+-- Cantidad de facturas: la lista la muestra sin descargar las facturas (se piden al hacer clic en el RUT)
+alter table rut_clientes add column if not exists n_facturas integer generated always as (cardinality(facturas)) stored;
 
 create or replace function cargar_rut_clientes(p_items jsonb) returns integer
 language plpgsql security definer set search_path = public as $$
