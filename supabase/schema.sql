@@ -1338,12 +1338,13 @@ begin
   with x as (
     select trim(i->>'rut') as rut, trim(i->>'nombre') as nombre, nullif(trim(i->>'direccion'), '') as direccion,
            nullif(trim(i->>'comuna'), '') as comuna, nullif(trim(i->>'ciudad'), '') as ciudad,
-           nullif(trim(i->>'archivo'), '') as archivo, o
+           coalesce(i->'facturas', '[]'::jsonb) as facturas, o
       from jsonb_array_elements(p_items) with ordinality as t(i, o)
      where nullif(trim(i->>'rut'), '') is not null and nullif(trim(i->>'nombre'), '') is not null)
   insert into rut_clientes (rut, nombre, direccion, comuna, ciudad, facturas)
   select distinct on (rut) rut, nombre, direccion, comuna, ciudad,
-         array(select distinct y.archivo from x y where y.rut = x.rut and y.archivo is not null order by 1)
+         array(select distinct trim(f) from x y, jsonb_array_elements_text(y.facturas) f
+                where y.rut = x.rut and trim(f) <> '' order by 1)
     from x order by rut, o;
   get diagnostics n = row_count;
   return n;

@@ -19,7 +19,8 @@ guía, retorno estimado) y cuando vuelve. La lista de equipos avisa cuántos est
 
 El administrador también tiene **RUT Clientes** (Administración): busca por nombre, RUT (con o sin puntos) o comuna.
 Debajo, el desplegable **Facturas asociadas** lista las facturas de los clientes encontrados.
-La lista se carga desde un CSV con columnas `rut, nombre, direccion, comuna, ciudad` y `archivo` (la factura);
+La lista se carga desde un CSV con columnas `rut, nombre, direccion, comuna, ciudad`, `archivo` y
+`facturas_asociadas` (varias separadas por ` | `);
 si un RUT aparece en varias filas, se juntan sus facturas. Cada carga reemplaza la anterior. El CSV no se sube al repositorio.
 
 Además, el administrador tiene un **Buscador de Excel** (Administración): abre planillas de compras u otras,

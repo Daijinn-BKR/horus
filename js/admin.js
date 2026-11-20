@@ -322,13 +322,23 @@ async function rutClientes() {
         <td>${esc(c.direccion || "")}</td><td>${esc(c.comuna || "")}</td><td>${esc(c.ciudad || "")}</td></tr>`).join("")}</tbody>
     </table></div>` : `<p class="vacio">${data.length ? "Sin resultados." : "Todavía no hay datos. Usa “Cargar CSV”."}</p>`;
     // Facturas de los clientes que coinciden con la búsqueda (el desplegable conserva si está abierto o cerrado)
-    const fact = l.flatMap((c) => (c.facturas || []).map((f) => [f, c]));
+    fact = l.flatMap((c) => [...(c.facturas || [])].sort(orden.compare).map((f) => [f, c]));
     $("#rc-fconteo").textContent = `(${nf.format(fact.length)})`;
-    $("#rc-fres").innerHTML = fact.length ? `<div class="tabla-wrap"><table class="tabla">
+    pintarFacturas();
+  };
+  // Se dibuja solo con el desplegable abierto. shortcut: muestra hasta 500 filas; con más, buscar para acotar
+  let fact = [];
+  const MAX_FACT = 500, orden = new Intl.Collator("es", { numeric: true });
+  const pintarFacturas = () => {
+    if (!$("#rc-facturas").open) return;
+    const ver = fact.slice(0, MAX_FACT);
+    $("#rc-fres").innerHTML = fact.length ? `${fact.length > MAX_FACT ? `<p class="muted small">Mostrando ${MAX_FACT} de ${nf.format(fact.length)}. Busca un cliente para ver solo sus facturas.</p>` : ""}
+      <div class="tabla-wrap"><table class="tabla">
       <thead><tr><th>Factura</th><th>RUT</th><th>Cliente</th></tr></thead>
-      <tbody>${fact.map(([f, c]) => `<tr><td>${esc(f)}</td><td style="white-space:nowrap">${esc(c.rut)}</td><td>${esc(c.nombre)}</td></tr>`).join("")}</tbody>
+      <tbody>${ver.map(([f, c]) => `<tr><td>${esc(f)}</td><td style="white-space:nowrap">${esc(c.rut)}</td><td>${esc(c.nombre)}</td></tr>`).join("")}</tbody>
     </table></div>` : `<p class="muted small" style="margin:0">Sin facturas para esta búsqueda.</p>`;
   };
+  $("#rc-facturas", v).ontoggle = pintarFacturas;
   $("#rc-buscar", v).oninput = pintar;
   $("#rc-cargar", v).onclick = () => $("#rc-archivo", v).click();
   $("#rc-archivo", v).onchange = async (ev) => {
@@ -338,14 +348,16 @@ async function rutClientes() {
     try {
       const { columnas, datos } = separarEncabezado((await leerArchivo(f))[0].filas);
       const col = (n) => columnas.findIndex((c) => normal(c) === n);
-      const idx = Object.fromEntries(["rut", "nombre", "direccion", "comuna", "ciudad", "archivo"].map((n) => [n, col(n)]));
+      const idx = Object.fromEntries(["rut", "nombre", "direccion", "comuna", "ciudad", "archivo", "facturas_asociadas"].map((n) => [n, col(n)]));
       if (idx.rut < 0 || idx.nombre < 0) throw new Error("El archivo debe tener las columnas rut y nombre.");
       const items = datos.map((fila) => Object.fromEntries(Object.entries(idx).map(([k, i]) => [k, i < 0 || fila[i] == null ? null : String(fila[i]).trim()])))
-        .filter((x) => x.rut && x.nombre);
+        .filter((x) => x.rut && x.nombre)
+        // facturas: la columna "archivo" más "facturas_asociadas" (separadas por " | ")
+        .map(({ archivo, facturas_asociadas, ...x }) => ({ ...x, facturas: [archivo, ...String(facturas_asociadas || "").split("|")].map((t) => (t || "").trim()).filter(Boolean) }));
       if (!confirm(`¿Reemplazar la lista actual (${nf.format(data.length)}) por ${nf.format(items.length)} clientes de “${f.name}”?`)) return;
       const { data: n, error: e } = await sb.rpc("cargar_rut_clientes", { p_items: items });
       if (e) return aviso(msgError(e), true);
-      aviso(`Lista cargada: ${nf.format(n)} clientes${n < items.length ? ` (${items.length - n} filas de RUT repetidos se unieron con sus facturas)` : ""}.`);
+      aviso(`Lista cargada: ${nf.format(n)} clientes y ${nf.format(items.reduce((s, x) => s + x.facturas.length, 0))} facturas${n < items.length ? ` (${items.length - n} filas de RUT repetidos se unieron)` : ""}.`);
       rutClientes();
     } catch (e) { aviso("No se pudo leer el archivo: " + e.message, true); }
   };
