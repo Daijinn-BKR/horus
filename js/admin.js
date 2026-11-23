@@ -2,7 +2,9 @@
 import {
   sb, H, MODULOS, ROLES, ROLES_EMPRESA, PERMISOS, $, $$, esc, aviso, msgError, vista, cargando, fmtHora, fecha,
   clientesEmpresa, olvidarClientes, normalizarRut, normalizarTelefono, validarCampo, msgCarga, nf,
+  cargarScript, SCRIPTS, descargarCSV,
 } from "./nucleo.js";
+import { leerFactura } from "./facturas.js";
 import { leerArchivo, separarEncabezado, normal } from "./excel.js";
 
 export const rutas = [
@@ -353,12 +355,17 @@ function partirFactura(t) {
   if (!mes) return { nombre: String(t), fecha: null, monto: null };
   return { nombre: m[1], fecha: `${m[4]}-${String(mes).padStart(2, "0")}-${m[2].padStart(2, "0")}`, monto: Number(m[5].replace(/\./g, "")) };
 }
+// Ruta del PDF en el bucket "facturas": <rut>/<nombre del archivo sin tildes ni símbolos>
+const rutaFactura = (rut, archivo) => `${rut}/${archivo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9._-]+/g, "_")}`;
+const conLugar = (x) => { const comuna = lugar(x.comuna), ciudad = lugar(x.ciudad); return { ...x, comuna, ciudad: ciudad && ciudad !== "PUERTO" ? ciudad : comuna }; };
 async function rutClientes() {
   cargando();
   // Sin la columna facturas (pesa ~90% de la tabla): se piden al hacer clic en el RUT
   const { data, error } = await sb.from("rut_clientes").select("rut, nombre, direccion, comuna, ciudad, n_facturas").order("nombre");
-  const v = vista(cabecera("RUT Clientes", `<button class="primary" id="rc-cargar">Cargar CSV</button>`) + `
+  const v = vista(cabecera("RUT Clientes", `<button id="rc-csv">Descargar CSV</button><button id="rc-cargar">Cargar CSV</button>
+      <button class="primary" id="rc-subir">Subir facturas</button>`) + `
     <input id="rc-archivo" type="file" accept=".csv,.xlsx,.xls" hidden>
+    <input id="rc-pdfs" type="file" accept="application/pdf,.pdf" multiple hidden>
     <div class="filtros"><input id="rc-buscar" type="search" placeholder="Nombre, RUT o comuna…" aria-label="Buscar" autocomplete="off"></div>
     <p class="muted small" id="rc-conteo"></p>
     <div id="rc-res"></div>
@@ -390,9 +397,18 @@ async function rutClientes() {
     if (!b) return;
     const c = vistos[+b.dataset.i];
     b.disabled = true;
-    const { data: r, error: e } = await sb.from("rut_clientes").select("facturas").eq("rut", c.rut).maybeSingle();
+    const [{ data: r, error: e }, pdfs] = await Promise.all([
+      sb.from("rut_clientes").select("facturas").eq("rut", c.rut).maybeSingle(),
+      sb.storage.from("facturas").list(c.rut, { limit: 1000 }),
+    ]);
+    if (e) { b.disabled = false; return aviso(msgError(e), true); }
+    // Facturas subidas desde Horus: su PDF se puede abrir (enlace firmado, 1 hora)
+    const subidas = new Set((pdfs.data || []).map((x) => `${c.rut}/${x.name}`)), url = {};
+    if (subidas.size) {
+      const fu = await sb.storage.from("facturas").createSignedUrls([...subidas], 3600);
+      (fu.data || []).forEach((x) => { if (x.signedUrl) url[x.path] = x.signedUrl; });
+    }
     b.disabled = false;
-    if (e) return aviso(msgError(e), true);
     const f = (r?.facturas || []).map(partirFactura)
       .sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "") || orden.compare(a.nombre, b.nombre));
     const total = f.reduce((s, x) => s + (x.monto || 0), 0);
@@ -400,7 +416,8 @@ async function rutClientes() {
     $("#rc-dlg-s").textContent = `${c.rut} · ${nf.format(f.length)} factura${f.length === 1 ? "" : "s"} asociada${f.length === 1 ? "" : "s"}`
       + (total ? ` · total ${pesos.format(total)}` : "");
     $("#rc-dlg-l").innerHTML = f.length ? `<table class="tabla"><thead><tr><th>Factura</th><th>Fecha</th><th style="text-align:right">Monto</th></tr></thead>
-      <tbody>${f.map((x) => `<tr><td>${esc(x.nombre)}</td><td style="white-space:nowrap">${x.fecha ? fecha(x.fecha) : ""}</td>
+      <tbody>${f.map((x) => `<tr><td>${url[rutaFactura(c.rut, x.nombre)]
+        ? `<a href="${esc(url[rutaFactura(c.rut, x.nombre)])}" target="_blank" rel="noopener">${esc(x.nombre)}</a>` : esc(x.nombre)}</td><td style="white-space:nowrap">${x.fecha ? fecha(x.fecha) : ""}</td>
         <td style="text-align:right;white-space:nowrap">${x.monto != null ? pesos.format(x.monto) : ""}</td></tr>`).join("")}</tbody></table>`
       : `<p class="muted">Sin facturas asociadas.</p>`;
     dlg.showModal();
@@ -429,8 +446,7 @@ async function rutClientes() {
         .map(({ archivo, facturas_asociadas, ...x }) => {
           const fs = String(facturas_asociadas || "").split("|").map((t) => t.trim()).filter(Boolean);
           if (archivo && !fs.some((t) => t === archivo || t.startsWith(archivo + " ("))) fs.unshift(archivo);
-          const comuna = lugar(x.comuna), ciudad = lugar(x.ciudad);
-          return { ...x, comuna, ciudad: ciudad && ciudad !== "PUERTO" ? ciudad : comuna, facturas: fs };
+          return { ...conLugar(x), facturas: fs };
         });
       if (!confirm(`¿Reemplazar la lista actual (${nf.format(data.length)}) por ${nf.format(items.length)} clientes de “${f.name}”?`)) return;
       const { data: n, error: e } = await sb.rpc("cargar_rut_clientes", { p_items: items });
@@ -438,6 +454,52 @@ async function rutClientes() {
       aviso(`Lista cargada: ${nf.format(n)} clientes y ${nf.format(items.reduce((s, x) => s + x.facturas.length, 0))} facturas${n < items.length ? ` (${items.length - n} filas de RUT repetidos se unieron)` : ""}.`);
       rutClientes();
     } catch (e) { aviso("No se pudo leer el archivo: " + e.message, true); }
+  };
+  // Subir facturas (PDF, varias a la vez): se leen aquí, se guardan sus PDF y sus datos se suman a la lista al instante
+  $("#rc-subir", v).onclick = () => $("#rc-pdfs", v).click();
+  $("#rc-pdfs", v).onchange = async (ev) => {
+    const archivos = [...ev.target.files];
+    ev.target.value = "";
+    if (!archivos.length) return;
+    const btn = $("#rc-subir");
+    btn.disabled = true;
+    try {
+      await cargarScript(SCRIPTS.pdf);
+      await cargarScript(SCRIPTS.pdfWorker); // sin worker aparte: pdf.js lo usa en la misma página (CSP)
+      const items = [], malas = [];
+      for (const [n, a] of archivos.entries()) {
+        aviso(`Leyendo factura ${n + 1} de ${archivos.length}…`);
+        try {
+          const d = await leerFactura(window.pdfjsLib, new Uint8Array(await a.arrayBuffer()));
+          const faltan = ["rut", "nombre", "fecha", "total"].filter((k) => !d[k]);
+          if (faltan.length) { malas.push(`${a.name}: no se encontró ${faltan.join(", ")}`); continue; }
+          items.push({ archivo: a, ...conLugar({ rut: d.rut, nombre: d.nombre, direccion: d.direccion || null, comuna: d.comuna, ciudad: d.ciudad }),
+            factura: `${a.name} (${d.fecha}, $${d.total})` });
+        } catch (e) { malas.push(`${a.name}: no es un PDF de factura legible`); }
+      }
+      if (items.length) {
+        for (const [n, x] of items.entries()) {
+          aviso(`Guardando PDF ${n + 1} de ${items.length}…`);
+          const up = await sb.storage.from("facturas").upload(rutaFactura(x.rut, x.archivo.name), x.archivo, { contentType: "application/pdf" });
+          if (up.error && !/exists|duplicate/i.test(up.error.message)) malas.push(`${x.archivo.name}: datos guardados, pero el PDF no (${msgError(up.error)})`);
+        }
+        const { data: r, error } = await sb.rpc("agregar_facturas", { p_items: items.map(({ archivo, ...x }) => x) });
+        if (error) throw error;
+        aviso(`${nf.format(r.agregadas)} factura${r.agregadas === 1 ? "" : "s"} agregada${r.agregadas === 1 ? "" : "s"}`
+          + (r.nuevos ? ` · ${nf.format(r.nuevos)} cliente${r.nuevos === 1 ? "" : "s"} nuevo${r.nuevos === 1 ? "" : "s"}` : "")
+          + (r.repetidas ? ` · ${nf.format(r.repetidas)} ya estaba${r.repetidas === 1 ? "" : "n"}` : "") + (malas.length ? ` · ${malas.length} con problemas` : "."), !!malas.length);
+      }
+      if (malas.length) alert("Facturas con problemas:\n\n" + malas.join("\n"));
+      if (items.length) rutClientes();
+    } catch (e) { aviso("No se pudieron subir las facturas: " + msgError(e), true); }
+    btn.disabled = false;
+  };
+  // La lista completa en el mismo formato de receptores.csv (se puede volver a cargar con "Cargar CSV")
+  $("#rc-csv", v).onclick = async () => {
+    const { data: t, error: e } = await sb.from("rut_clientes").select("rut, nombre, direccion, comuna, ciudad, facturas").order("nombre");
+    if (e) return aviso(msgError(e), true);
+    descargarCSV("receptores", ["archivo", "rut", "nombre", "direccion", "comuna", "ciudad", "facturas_asociadas"],
+      t.map((c) => [(c.facturas[0] || "").split(" (")[0], c.rut, c.nombre, c.direccion, c.comuna, c.ciudad, c.facturas.join(" | ")]));
   };
   pintar();
   $("#rc-buscar", v).focus();

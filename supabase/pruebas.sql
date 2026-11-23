@@ -264,5 +264,30 @@ begin
 end $$;
 reset role;
 
+-- ---------- Subir facturas: cliente nuevo, factura nueva, factura repetida; solo admin ----------
+insert into rut_clientes (rut, nombre, facturas) values ('71.551.500-8', 'UNIVERSIDAD SANTO TOMAS', array['F1.pdf (07 de Abril del 2019, $404.600)']);
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', true);
+set local role authenticated;
+do $$ declare ok boolean := false; begin
+  begin perform agregar_facturas('[{"rut":"1-9","nombre":"X","factura":"Z.pdf (01 de Enero del 2024, $1)"}]');
+  exception when others then ok := true; end;
+  if not ok then raise exception 'FALLA: un operario pudo subir facturas'; end if;
+  raise notice 'OK: solo el admin sube facturas';
+end $$;
+reset role;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', true);
+set local role authenticated;
+do $$ declare r jsonb; begin
+  r := agregar_facturas('[
+    {"rut":"71.551.500-8","nombre":"UNIVERSIDAD SANTO TOMAS","factura":"F2.pdf (08 de Abril del 2019, $10.000)"},
+    {"rut":"71.551.500-8","nombre":"UNIVERSIDAD SANTO TOMAS","factura":"F1.pdf (07 de Abril del 2019, $404.600)"},
+    {"rut":"76.000.000-0","nombre":"CLIENTE NUEVO","direccion":"CALLE 1","comuna":"PUERTO MONTT","ciudad":"PUERTO MONTT","factura":"F3.pdf (09 de Abril del 2019, $5.000)"}]');
+  if r <> '{"nuevos": 1, "agregadas": 2, "repetidas": 1}'::jsonb then raise exception 'FALLA: agregar_facturas devolvió %', r; end if;
+  if (select n_facturas from rut_clientes where rut = '71.551.500-8') <> 2 then raise exception 'FALLA: la factura no se sumó al cliente'; end if;
+  if (select comuna from rut_clientes where rut = '76.000.000-0') <> 'PUERTO MONTT' then raise exception 'FALLA: el cliente nuevo no quedó con sus datos'; end if;
+  raise notice 'OK: subir facturas suma, crea y no repite';
+end $$;
+reset role;
+
 rollback;
 \echo 'Todas las pruebas pasaron.'

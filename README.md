@@ -19,6 +19,11 @@ guía, retorno estimado) y cuando vuelve. La lista de equipos avisa cuántos est
 
 El administrador también tiene **RUT Clientes** (Administración): busca por nombre, RUT (con o sin puntos) o comuna.
 Al hacer clic en un RUT se abre un mini menú con sus **facturas asociadas**.
+**Subir facturas** (uno o varios PDF de factura electrónica a la vez): Horus lee de cada PDF el RUT, nombre,
+dirección, comuna y ciudad del receptor, la fecha y el total (las mismas reglas de `extraer.py`), guarda el PDF y suma
+la factura al cliente al instante (o crea el cliente si es nuevo; una factura ya registrada no se repite). Las facturas
+subidas se pueden abrir desde el mini menú. **Descargar CSV** baja la lista completa en el mismo formato de
+`receptores.csv`.
 La lista se carga desde un CSV con columnas `rut, nombre, direccion, comuna, ciudad`, `archivo` y
 `facturas_asociadas` (varias separadas por ` | `);
 si un RUT aparece en varias filas, se juntan sus facturas. Cada carga reemplaza la anterior. El CSV no se sube al repositorio.

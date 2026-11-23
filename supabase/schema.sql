@@ -1671,4 +1671,57 @@ drop trigger if exists servicio_seap on servicios;
 create trigger servicio_seap before insert or update or delete on servicios
   for each row execute function servicio_seap();
 
+-- =====================================================================
+--  RUT Clientes: subir facturas (PDF). La app lee cada factura y agrega sus datos aquí al instante.
+--  Cliente nuevo → se crea; cliente existente → se le suma la factura (si no la tenía ya).
+-- =====================================================================
+-- p_items: [{ rut, nombre, direccion, comuna, ciudad, factura: "archivo.pdf (fecha, $total)" }]
+create or replace function agregar_facturas(p_items jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare i jsonb; v_rut text; v_fac text; v_arch text; nuevos int := 0; agregadas int := 0; repetidas int := 0;
+begin
+  if not es_admin() then
+    raise exception 'Solo un administrador puede subir facturas' using errcode = '42501';
+  end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'array' then raise exception 'No hay facturas'; end if;
+  for i in select * from jsonb_array_elements(p_items) loop
+    v_rut := upper(nullif(trim(i->>'rut'), ''));
+    v_fac := nullif(trim(i->>'factura'), '');
+    if v_rut is null or v_fac is null or nullif(trim(i->>'nombre'), '') is null then
+      raise exception 'Falta el RUT, el nombre o la factura';
+    end if;
+    v_arch := split_part(v_fac, ' (', 1);   -- nombre del archivo, para no repetir la misma factura
+    if not exists (select 1 from rut_clientes where rut = v_rut) then
+      insert into rut_clientes (rut, nombre, direccion, comuna, ciudad, facturas)
+      values (v_rut, trim(i->>'nombre'), nullif(trim(i->>'direccion'), ''), nullif(trim(i->>'comuna'), ''),
+              nullif(trim(i->>'ciudad'), ''), array[v_fac]);
+      nuevos := nuevos + 1; agregadas := agregadas + 1;
+    elsif exists (select 1 from rut_clientes, unnest(facturas) f
+                   where rut = v_rut and (f = v_arch or split_part(f, ' (', 1) = v_arch)) then
+      repetidas := repetidas + 1;
+    else
+      update rut_clientes set facturas = facturas || v_fac,
+        direccion = coalesce(direccion, nullif(trim(i->>'direccion'), '')),
+        comuna = coalesce(comuna, nullif(trim(i->>'comuna'), '')), ciudad = coalesce(ciudad, nullif(trim(i->>'ciudad'), ''))
+       where rut = v_rut;
+      agregadas := agregadas + 1;
+    end if;
+  end loop;
+  return jsonb_build_object('nuevos', nuevos, 'agregadas', agregadas, 'repetidas', repetidas);
+end $$;
+revoke execute on function agregar_facturas(jsonb) from anon, public;
+grant  execute on function agregar_facturas(jsonb) to authenticated;
+
+-- Los PDF de las facturas subidas: bucket privado, solo admin. Ruta: <rut>/<archivo sin tildes>.pdf
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('facturas', 'facturas', false, 10485760, array['application/pdf'])
+on conflict (id) do nothing;
+update storage.buckets set allowed_mime_types = array['application/pdf'] where id = 'facturas';
+drop policy if exists "horus_fact_leer"   on storage.objects;
+drop policy if exists "horus_fact_subir"  on storage.objects;
+drop policy if exists "horus_fact_borrar" on storage.objects;
+create policy "horus_fact_leer"   on storage.objects for select to authenticated using (bucket_id = 'facturas' and es_admin());
+create policy "horus_fact_subir"  on storage.objects for insert to authenticated with check (bucket_id = 'facturas' and es_admin());
+create policy "horus_fact_borrar" on storage.objects for delete to authenticated using (bucket_id = 'facturas' and es_admin());
+
 notify pgrst, 'reload schema';

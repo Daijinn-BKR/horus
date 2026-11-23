@@ -1,12 +1,12 @@
 // Service worker: permite instalar Horus como app (celular y Windows) y abrir la pantalla con mala señal.
 // Los datos (Supabase) nunca se guardan aquí: siempre se piden en línea.
-const CACHE = "horus-v25";
+const CACHE = "horus-v26";
 const BASE = [
   "./", "index.html", "css/horus.css", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png",
   "icons/emblema.png", "icons/favicon.png", "icons/omega.png", "icons/lafken.png",
   "js/config.js", "js/app.js", "js/nucleo.js", "js/publico.js", "js/equipos.js", "js/inventario.js",
   "js/servicios.js", "js/sala.js", "js/admin.js",
-  "js/bobinado.js", "js/precios.js", "js/excel.js", "js/ordenes.js", "js/pendientes.js", "js/sanitizacion.js", "js/medios.js", "js/tema.js",
+  "js/bobinado.js", "js/precios.js", "js/excel.js", "js/ordenes.js", "js/pendientes.js", "js/sanitizacion.js", "js/medios.js", "js/facturas.js", "js/tema.js",
 ];
 
 self.addEventListener("install", (e) => {
