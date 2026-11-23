@@ -170,9 +170,9 @@ async function ficha(id, refresco = false) {
     <div class="panel"><h2>Proceso y notas</h2><dl class="datos">${CIERRE.map((c) => filaDato(c, e)).join("")}</dl></div>
 
     <div class="panel"><h2>Fotos</h2><div id="fotos" class="galeria"></div>
-      <label class="btn subir">+ Agregar fotos<input type="file" id="in-fotos" accept="image/*" multiple></label></div>
+      <label class="btn subir">+ Agregar fotos<input type="file" id="in-fotos" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif" multiple></label></div>
     <div class="panel"><h2>Videos</h2><div id="videos" class="videos"></div>
-      <label class="btn subir">+ Agregar video<input type="file" id="in-videos" accept="video/*" multiple></label>
+      <label class="btn subir">+ Agregar video<input type="file" id="in-videos" accept="video/mp4,video/quicktime,video/webm,video/3gpp,video/x-matroska,video/x-msvideo" multiple></label>
       <p class="muted small" style="margin:8px 0 0">Máximo 50 MB por video.</p></div>
 
     <div class="fila-acciones">
@@ -455,7 +455,7 @@ async function formulario(id) {
         <select id="f-estado" name="estado"><option value="">(sin estado)</option>
           ${unicos([...estados, estadoActual]).map((o) => `<option${o === estadoActual ? " selected" : ""}>${esc(o)}</option>`).join("")}
         </select></div>
-      ${e ? "" : `<div class="panel"><h2>Fotos</h2><input type="file" name="fotos" accept="image/*" multiple>
+      ${e ? "" : `<div class="panel"><h2>Fotos</h2><input type="file" name="fotos" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif" multiple>
         <p class="muted small" style="margin:6px 0 0">Opcional. También puedes agregar fotos y videos después, desde la ficha.</p></div>`}
       <div class="guardar"><a class="btn" href="${volver}">Cancelar</a>
         <button type="submit" class="primary" id="btn-guardar">${e ? "Guardar cambios" : "Guardar equipo"}</button></div>

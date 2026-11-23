@@ -23,21 +23,22 @@ async function reducirImagen(file, max = 1600) {
   }
 }
 
-// Decide si es foto o video y lo deja listo para subir. Los buckets solo aceptan image/* y video/*,
-// así que el tipo se completa por la extensión cuando el celular no lo informa.
+// Decide si es foto o video y lo deja listo para subir. Los buckets solo aceptan los tipos de TIPOS_FOTO
+// y TIPOS_VIDEO (no SVG, que puede traer código); el tipo se completa por la extensión si el celular no lo informa.
+const tipoValido = (lista, t) => (Object.values(lista).includes(t) ? t : null);
 async function preparar(file, tipo) {
   const ext = (file.name.includes(".") ? file.name.split(".").pop() : "").toLowerCase();
   tipo ||= file.type.startsWith("video/") || TIPOS_VIDEO[ext] ? "video" : "foto";
   if (tipo === "video") {
-    const contentType = file.type.startsWith("video/") ? file.type : TIPOS_VIDEO[ext];
+    const contentType = tipoValido(TIPOS_VIDEO, file.type) || TIPOS_VIDEO[ext];
     if (!contentType) throw new Error(`“${file.name}” no es un video.`);
     if (file.size > MAX_VIDEO) throw new Error(`“${file.name}” pesa más de 50 MB. Grábalo más corto o en menor calidad.`);
     return { tipo, blob: file, ext: ext || "mp4", contentType };
   }
   const blob = await reducirImagen(file);
   if (blob !== file) return { tipo, blob, ext: "jpg", contentType: "image/jpeg" };
-  const contentType = file.type.startsWith("image/") ? file.type : TIPOS_FOTO[ext];
-  if (!contentType) throw new Error(`“${file.name}” no es una foto.`);
+  const contentType = tipoValido(TIPOS_FOTO, file.type) || TIPOS_FOTO[ext];
+  if (!contentType) throw new Error(`“${file.name}” no es una foto (usa JPG, PNG, WEBP, GIF o HEIC).`);
   return { tipo, blob: file, ext: ext || "jpg", contentType };
 }
 
