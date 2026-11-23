@@ -217,35 +217,50 @@ do $$ begin
   raise notice 'OK: buckets con tipos exactos';
 end $$;
 
--- ---------- Sanitización solo para supervisor y admin; SEAP solo con algo coordinado ----------
+-- ---------- Sanitización solo para supervisor y admin; SEAP descuenta estanques ----------
 insert into sanitizaciones (id, empresa_id, cliente_id, lugar, estanques) values
-  ('00000000-0000-0000-0000-0000000000a1', 'lafken', '00000000-0000-0000-0000-0000000000c3', 'Planta', 2);
+  ('00000000-0000-0000-0000-0000000000a1', 'lafken', '00000000-0000-0000-0000-0000000000c3', 'Planta', 5);
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', true);
 set local role authenticated;
 do $$ declare ok boolean := false; begin
   if exists (select 1 from sanitizaciones) then raise exception 'FALLA: un operario ve las sanitizaciones'; end if;
-  if exists (select 1 from clientes_coordinados('lafken')) then raise exception 'FALLA: cliente sin nada coordinado aparece para SEAP'; end if;
+  if exists (select 1 from sanitizaciones_coordinadas('lafken')) then raise exception 'FALLA: aparece una sanitización no coordinada'; end if;
   begin
     perform srv_guardar(null, '{"empresa_id":"lafken","cliente_id":"00000000-0000-0000-0000-0000000000c3","fecha":"2026-02-01",
-                               "tipos":["SEAP"],"iv":"5555"}', array['00000000-0000-0000-0000-0000000000e1']::uuid[]);
+                               "tipos":["SEAP"],"iv":"5555","sanitizacion_id":"00000000-0000-0000-0000-0000000000a1","estanques":1}',
+                        array['00000000-0000-0000-0000-0000000000e1']::uuid[]);
   exception when others then ok := sqlerrm like 'SEAP:%';
   end;
   if not ok then raise exception 'FALLA: se registró un SEAP sin sanitización coordinada'; end if;
   raise notice 'OK: operario sin acceso a sanitización; SEAP rechazado sin coordinación';
 end $$;
 reset role;
-select set_config('request.jwt.claim.sub', '', true);  -- sin sesión, como el SQL Editor
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', true);  -- el admin la coordina
 update sanitizaciones set estado = 'Coordinado' where id = '00000000-0000-0000-0000-0000000000a1';
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', true);
 set local role authenticated;
-do $$ begin
-  if (select array_agg(x) from clientes_coordinados('lafken') x) is distinct from array['00000000-0000-0000-0000-0000000000c3']::uuid[] then
-    raise exception 'FALLA: clientes_coordinados() no devuelve el cliente coordinado';
-  end if;
-  if exists (select 1 from clientes_coordinados('omega')) then raise exception 'FALLA: clientes_coordinados() muestra otra empresa'; end if;
-  perform srv_guardar(null, '{"empresa_id":"lafken","cliente_id":"00000000-0000-0000-0000-0000000000c3","fecha":"2026-02-01",
-                             "tipos":["SEAP"],"iv":"5555"}', array['00000000-0000-0000-0000-0000000000e1']::uuid[]);
-  raise notice 'OK: SEAP con sanitización coordinada';
+do $$ declare v uuid; ok boolean := false;
+  pend int; datos jsonb := '{"empresa_id":"lafken","cliente_id":"00000000-0000-0000-0000-0000000000c3","fecha":"2026-02-01",
+                             "tipos":["SEAP"],"iv":"5555","sanitizacion_id":"00000000-0000-0000-0000-0000000000a1"}';
+begin
+  if (select pendientes from sanitizaciones_coordinadas('lafken')) <> 5 then raise exception 'FALLA: no aparece la sanitización coordinada con 5 pendientes'; end if;
+  if exists (select 1 from sanitizaciones_coordinadas('omega')) then raise exception 'FALLA: sanitizaciones_coordinadas() muestra otra empresa'; end if;
+  v := srv_guardar(null, datos || '{"estanques":2}', array['00000000-0000-0000-0000-0000000000e1']::uuid[]);
+  pend := (select pendientes from sanitizaciones_coordinadas('lafken'));
+  if pend <> 3 then raise exception 'FALLA: SEAP de 2 estanques dejó % pendientes (esperado 3)', pend; end if;
+  perform srv_guardar(v, datos || '{"estanques":4}', array['00000000-0000-0000-0000-0000000000e1']::uuid[]);
+  pend := (select pendientes from sanitizaciones_coordinadas('lafken'));
+  if pend <> 1 then raise exception 'FALLA: editar el SEAP a 4 estanques dejó % pendientes (esperado 1)', pend; end if;
+  begin
+    perform srv_guardar(null, datos || '{"estanques":2}', array['00000000-0000-0000-0000-0000000000e1']::uuid[]);
+  exception when others then ok := sqlerrm like 'SEAP:%';
+  end;
+  if not ok then raise exception 'FALLA: un SEAP descontó más estanques de los pendientes'; end if;
+  reset role;
+  delete from servicios where id = v;  -- como admin
+  pend := (select coalesce(estanques_pendientes, -1) from sanitizaciones where id = '00000000-0000-0000-0000-0000000000a1');
+  if pend <> 5 then raise exception 'FALLA: borrar el SEAP dejó % pendientes (esperado 5)', pend; end if;
+  raise notice 'OK: SEAP descuenta, corrige y devuelve estanques';
 end $$;
 reset role;
 

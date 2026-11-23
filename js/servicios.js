@@ -104,15 +104,21 @@ async function formulario(id, desde = null) {
     if (error || !data) { vista(`<a href="#/servicios" class="volver">← Servicios</a><p class="vacio">No se encontró el servicio.</p>`); return; }
     s = { ...data, ops: data.servicio_personal.map((x) => x.personal_id) };
     // Siguiente visita: mismo cliente, servicio y personal; IV, fecha, foto y observaciones nuevos
-    if (desde) s = { ...s, id: undefined, fecha: hoy(), iv: "", observaciones: "", foto: null, visita: data.visita + 1, serie_id: serie(data) };
+    if (desde) s = { ...s, id: undefined, fecha: hoy(), iv: "", observaciones: "", foto: null, estanques: null, visita: data.visita + 1, serie_id: serie(data) };
   }
   const [clientes, pers, coord] = await Promise.all([
     clientesEmpresa(),
     sb.from("personal").select("*").eq("empresa_id", H.empresa.id).order("nombre"),
-    opcionesServicio().includes("SEAP") ? sb.rpc("clientes_coordinados", { p_empresa: H.empresa.id }) : { data: [] },
+    opcionesServicio().includes("SEAP") ? sb.rpc("sanitizaciones_coordinadas", { p_empresa: H.empresa.id }) : { data: [] },
   ]);
-  // SEAP: solo clientes con una sanitización coordinada (al editar, se mantiene el cliente que ya tenía)
-  const coordinados = new Set([...(coord.data || []), ...(s.tipos.includes("SEAP") ? [s.cliente_id] : [])]);
+  // SEAP: solo clientes con una sanitización coordinada; los estanques se descuentan de la sanitización elegida.
+  // Al editar se mantiene la sanitización que ya tenía, aunque ya esté finalizada.
+  const sans = coord.data || [];
+  if (s.sanitizacion_id && !sans.some((x) => x.id === s.sanitizacion_id)) {
+    sans.push({ id: s.sanitizacion_id, cliente_id: s.cliente_id, lugar: "Sanitización finalizada", pendientes: 0 });
+  }
+  const porHacer = (x) => x.pendientes + (x.id === s.sanitizacion_id ? s.estanques || 0 : 0);
+  const coordinados = new Set(sans.map((x) => x.cliente_id));
   const opcionesCliente = (soloSeap, sel) => `<option value="">— Selecciona —</option>` + clientes
     .filter((c) => !soloSeap || coordinados.has(c.id))
     .map((c) => `<option value="${c.id}"${c.id === sel ? " selected" : ""}>${esc(c.nombre)}</option>`).join("");
@@ -126,7 +132,14 @@ async function formulario(id, desde = null) {
     <form id="form-srv" class="panel" novalidate>
       <label for="f-cliente" class="req">Cliente</label>
       <select id="f-cliente">${opcionesCliente(s.tipos.includes("SEAP"), s.cliente_id)}</select>
-      <p class="muted small" id="f-seap-nota" ${s.tipos.includes("SEAP") ? "" : "hidden"}>SEAP: solo aparecen los clientes con una sanitización coordinada.</p>
+      <div id="seap-box" ${s.tipos.includes("SEAP") ? "" : "hidden"}>
+        <p class="muted small">SEAP: solo aparecen los clientes con una sanitización coordinada. Los estanques se descuentan de los pendientes.</p>
+        <div class="grid2">
+          <div><label for="f-san" class="req">Sanitización</label><select id="f-san"></select></div>
+          <div><label for="f-estanques" class="req">Estanques sanitizados</label>
+            <input id="f-estanques" type="number" inputmode="numeric" min="1" step="1" value="${s.estanques || ""}"></div>
+        </div>
+      </div>
       ${clientes.length ? "" : `<p class="muted small">No hay clientes. ${esAdmin() ? `<a href="#/admin/clientes">Crear clientes</a>` : "Pide al administrador que los agregue."}</p>`}
       <div class="grid2">
         <div><label for="f-fecha" class="req">Fecha</label><input id="f-fecha" type="date" value="${s.fecha}"></div>
@@ -152,11 +165,20 @@ async function formulario(id, desde = null) {
       <div class="guardar"><a class="btn" href="#/servicios">Cancelar</a>
         <button class="primary" type="submit" id="btn-guardar">${id ? "Guardar cambios" : "Guardar servicio"}</button></div>
     </form>`);
+  const pintarSan = () => {
+    const l = sans.filter((x) => x.cliente_id === $("#f-cliente").value), sel = $("#f-san").value || s.sanitizacion_id;
+    $("#f-san").innerHTML = l.length
+      ? l.map((x) => `<option value="${x.id}"${x.id === sel ? " selected" : ""}>${esc(x.lugar)} · quedan ${porHacer(x)} estanque${porHacer(x) === 1 ? "" : "s"}</option>`).join("")
+      : `<option value="">— Elige primero el cliente —</option>`;
+  };
+  pintarSan();
+  $("#f-cliente", v).onchange = pintarSan;
   $("#f-tipos", v).onchange = () => {
     const marcados = $$("#f-tipos input:checked").map((i) => i.value), seap = marcados.includes("SEAP");
     $("#otros-box").hidden = !marcados.includes("Otros");
-    $("#f-seap-nota").hidden = !seap;
+    $("#seap-box").hidden = !seap;
     $("#f-cliente").innerHTML = opcionesCliente(seap, $("#f-cliente").value); // si el cliente no tiene nada coordinado, queda sin elegir
+    pintarSan();
   };
 
   $("#form-srv", v).onsubmit = async (ev) => {
@@ -173,7 +195,12 @@ async function formulario(id, desde = null) {
     const iv = $("#f-iv").value.trim(), visitas = Number($("#f-visitas").value);
     if (!/^[0-9]{4,}$/.test(iv)) { $("#f-iv").focus(); return aviso("El IV debe tener al menos 4 números (solo números).", true); }
     if (!Number.isInteger(visitas) || visitas < s.visita) return aviso(`El número de visitas debe ser ${s.visita} o más.`, true);
-    const fila = { cliente_id, fecha: fechaS, tipos: tiposSel, otros_detalle: otros, observaciones: $("#f-obs").value.trim() || null, iv, visitas };
+    const seap = tiposSel.includes("SEAP");
+    const sanitizacion_id = seap ? $("#f-san").value : null, estanques = seap ? Number($("#f-estanques").value) : null;
+    if (seap && !sanitizacion_id) return aviso("SEAP: el cliente no tiene una sanitización coordinada.", true);
+    if (seap && !(Number.isInteger(estanques) && estanques >= 1)) { $("#f-estanques").focus(); return aviso("Indica cuántos estanques se sanitizaron.", true); }
+    const fila = { cliente_id, fecha: fechaS, tipos: tiposSel, otros_detalle: otros, observaciones: $("#f-obs").value.trim() || null, iv, visitas,
+      sanitizacion_id, estanques };
     if (!id) Object.assign(fila, { empresa_id: H.empresa.id, visita: s.visita, serie_id: s.serie_id });
     const btn = $("#btn-guardar");
     btn.disabled = true;

@@ -1563,18 +1563,21 @@ declare v_id uuid := p_id;
 begin
   if coalesce(cardinality(p_personal), 0) = 0 then raise exception 'Selecciona al menos una persona'; end if;
   if v_id is null then
-    insert into servicios (empresa_id, cliente_id, fecha, tipos, otros_detalle, observaciones, iv, visitas, visita, serie_id)
+    insert into servicios (empresa_id, cliente_id, fecha, tipos, otros_detalle, observaciones, iv, visitas, visita, serie_id,
+                           sanitizacion_id, estanques)
     values (p_datos->>'empresa_id', (p_datos->>'cliente_id')::uuid, (p_datos->>'fecha')::date, v_tipos,
             nullif(trim(coalesce(p_datos->>'otros_detalle', '')), ''), nullif(trim(coalesce(p_datos->>'observaciones', '')), ''),
             nullif(trim(coalesce(p_datos->>'iv', '')), ''), coalesce((p_datos->>'visitas')::int, 1),
-            coalesce((p_datos->>'visita')::int, 1), nullif(p_datos->>'serie_id', '')::uuid)
+            coalesce((p_datos->>'visita')::int, 1), nullif(p_datos->>'serie_id', '')::uuid,
+            nullif(p_datos->>'sanitizacion_id', '')::uuid, nullif(p_datos->>'estanques', '')::int)
     returning id into v_id;
   else
     update servicios set
       cliente_id = (p_datos->>'cliente_id')::uuid, fecha = (p_datos->>'fecha')::date, tipos = v_tipos,
       otros_detalle = nullif(trim(coalesce(p_datos->>'otros_detalle', '')), ''),
       observaciones = nullif(trim(coalesce(p_datos->>'observaciones', '')), ''),
-      iv = nullif(trim(coalesce(p_datos->>'iv', '')), ''), visitas = coalesce((p_datos->>'visitas')::int, visitas)
+      iv = nullif(trim(coalesce(p_datos->>'iv', '')), ''), visitas = coalesce((p_datos->>'visitas')::int, visitas),
+      sanitizacion_id = nullif(p_datos->>'sanitizacion_id', '')::uuid, estanques = nullif(p_datos->>'estanques', '')::int
     where id = v_id;
     if not found then raise exception 'No se encontró el servicio'; end if;
     delete from servicio_personal where servicio_id = v_id and personal_id <> all(p_personal);
@@ -1614,30 +1617,58 @@ begin
 end $$;
 
 -- =====================================================================
---  Servicio SEAP (Lafken): solo para clientes con una sanitización en estado Coordinado
+--  Servicio SEAP (Lafken): se hace a una sanitización en estado Coordinado y descuenta sus estanques pendientes
 -- =====================================================================
--- Clientes de la empresa con una sanitización coordinada (los operarios no ven las sanitizaciones)
-create or replace function clientes_coordinados(p_empresa text) returns setof uuid
-language sql stable security definer set search_path = public as $$
-  select distinct cliente_id from sanitizaciones
-   where empresa_id = p_empresa and estado = 'Coordinado' and es_staff(p_empresa);
-$$;
-revoke execute on function clientes_coordinados(text) from anon, public;
-grant  execute on function clientes_coordinados(text) to authenticated;
+alter table servicios add column if not exists sanitizacion_id uuid references sanitizaciones(id) on delete set null;
+alter table servicios add column if not exists estanques integer check (estanques > 0);   -- estanques sanitizados en esta visita
 
--- Se revisa al crear el servicio, al agregarle SEAP o al cambiarle el cliente. Sin sesión (migración) no se revisa.
+-- Sanitizaciones coordinadas de la empresa (los operarios no ven las sanitizaciones: solo esto)
+drop function if exists clientes_coordinados(text);
+create or replace function sanitizaciones_coordinadas(p_empresa text)
+returns table (id uuid, cliente_id uuid, lugar text, pendientes integer)
+language sql stable security definer set search_path = public as $$
+  select s.id, s.cliente_id, s.lugar, coalesce(s.estanques_pendientes, s.estanques) from sanitizaciones s
+   where s.empresa_id = p_empresa and s.estado = 'Coordinado' and es_staff(p_empresa)
+   order by s.fecha_programada nulls last, s.creado_en;
+$$;
+revoke execute on function sanitizaciones_coordinadas(text) from anon, public;
+grant  execute on function sanitizaciones_coordinadas(text) to authenticated;
+
+-- Al crear, editar o borrar un SEAP: devuelve los estanques que había descontado y descuenta los nuevos.
+-- Una sanitización ya finalizada no se toca. Sin sesión (migración, SQL Editor) no se revisa.
 create or replace function servicio_seap() returns trigger
 language plpgsql security definer set search_path = public as $$
+declare s sanitizaciones; ant servicios;
 begin
-  if auth.uid() is null or not ('SEAP' = any(new.tipos)) then return new; end if;
-  if tg_op = 'UPDATE' and 'SEAP' = any(old.tipos) and new.cliente_id is not distinct from old.cliente_id then return new; end if;
-  if not exists (select 1 from sanitizaciones where cliente_id = new.cliente_id and estado = 'Coordinado') then
+  if auth.uid() is null then return coalesce(new, old); end if;
+  if tg_op <> 'DELETE' and not ('SEAP' = any(new.tipos)) then new.sanitizacion_id := null; new.estanques := null; end if;
+  if tg_op <> 'INSERT' then ant := old; end if;
+  if tg_op = 'UPDATE' and (ant.sanitizacion_id, ant.estanques, ant.cliente_id)
+                          is not distinct from (new.sanitizacion_id, new.estanques, new.cliente_id) then return new; end if;
+  -- Devolver lo que se había descontado
+  if ant.sanitizacion_id is not null and ant.estanques is not null then
+    select * into s from sanitizaciones where id = ant.sanitizacion_id for update;
+    if s.estado = 'Coordinado' then
+      update sanitizaciones set estanques_pendientes = coalesce(estanques_pendientes, estanques) + ant.estanques where id = s.id;
+    elsif tg_op = 'UPDATE' then
+      raise exception 'SEAP: la sanitización ya está finalizada; no se pueden cambiar sus estanques';
+    end if;
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  if not ('SEAP' = any(new.tipos)) then return new; end if;
+  -- Descontar lo nuevo
+  select * into s from sanitizaciones where id = new.sanitizacion_id for update;
+  if s.id is null or s.cliente_id <> new.cliente_id or s.estado <> 'Coordinado' then
     raise exception 'SEAP: el cliente no tiene una sanitización coordinada';
   end if;
+  if new.estanques is null or new.estanques > coalesce(s.estanques_pendientes, s.estanques) then
+    raise exception 'SEAP: indica entre 1 y % estanques', coalesce(s.estanques_pendientes, s.estanques);
+  end if;
+  update sanitizaciones set estanques_pendientes = coalesce(estanques_pendientes, estanques) - new.estanques where id = s.id;
   return new;
 end $$;
 drop trigger if exists servicio_seap on servicios;
-create trigger servicio_seap before insert or update on servicios
+create trigger servicio_seap before insert or update or delete on servicios
   for each row execute function servicio_seap();
 
 notify pgrst, 'reload schema';

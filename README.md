@@ -57,7 +57,9 @@ Las apps originales quedaron sin cambios en `legado/` como referencia (esa carpe
 - **Servicios** (Lafken): cada visita lleva su **IV** (informe de visita, 4 números o más), el **número de visitas**
   del servicio y **una foto**. Si el servicio tiene más visitas, la tarjeta muestra “Iniciar segunda visita” (tercera…),
   que abre la visita siguiente con el mismo cliente, tipo y personal. Al marcar el tipo **SEAP**, solo se pueden
-  elegir clientes que tengan una sanitización en estado **Coordinado** (lo revisa también la base de datos).
+  elegir clientes que tengan una sanitización en estado **Coordinado** (lo revisa también la base de datos). Se elige
+  la sanitización y cuántos estanques se hicieron: se **descuentan de los estanques pendientes**. Si se edita o se
+  borra el servicio, la cuenta se corrige sola (mientras la sanitización siga coordinada).
 - **Sanitización de estanques** (Lafken): solo la ven y usan el supervisor y el admin. Tres pestañas. **Cotizado**:
   dónde, cliente y cuántos estanques. Cuando se aprueba, se pasa a **Coordinado**, donde se anota quién va, cuándo y
   cuántos estanques quedan por hacer. Después se pasa a **Finalizado**. El supervisor es un usuario con rol *Jefe* en la empresa Lafken.
