@@ -24,6 +24,9 @@ ORIGENES_PERMITIDOS = {
     "http://localhost:8000",
     "http://127.0.0.1:8000",
 }
+# Solo se atiende a quien llama por 127.0.0.1 o localhost (protege contra "DNS rebinding":
+# una página de otro dominio que apunte su nombre a 127.0.0.1 llega con su propio Host)
+HOSTS_PERMITIDOS = {f"127.0.0.1:{PUERTO}", f"localhost:{PUERTO}"}
 
 ESC, GS = b"\x1b", b"\x1d"
 
@@ -138,6 +141,8 @@ class Manejador(BaseHTTPRequestHandler):
         self.wfile.write(cuerpo)
 
     def _origen_ok(self):
+        if self.headers.get("Host") not in HOSTS_PERMITIDOS:
+            return False
         origen = self.headers.get("Origin")
         return not origen or origen in ORIGENES_PERMITIDOS
 
