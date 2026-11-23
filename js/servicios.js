@@ -142,7 +142,7 @@ async function formulario(id, desde = null) {
       </div>
       <label for="f-obs">Observaciones</label><textarea id="f-obs">${esc(s.observaciones)}</textarea>
       <label for="f-foto">Foto${s.foto ? " (ya tiene una; elige otra para reemplazarla)" : ""}</label>
-      <input id="f-foto" type="file" accept="image/*">
+      <input id="f-foto" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif">
       <div class="guardar"><a class="btn" href="#/servicios">Cancelar</a>
         <button class="primary" type="submit" id="btn-guardar">${id ? "Guardar cambios" : "Guardar servicio"}</button></div>
     </form>`);
@@ -163,23 +163,13 @@ async function formulario(id, desde = null) {
     if (!/^[0-9]{4,}$/.test(iv)) { $("#f-iv").focus(); return aviso("El IV debe tener al menos 4 números (solo números).", true); }
     if (!Number.isInteger(visitas) || visitas < s.visita) return aviso(`El número de visitas debe ser ${s.visita} o más.`, true);
     const fila = { cliente_id, fecha: fechaS, tipos: tiposSel, otros_detalle: otros, observaciones: $("#f-obs").value.trim() || null, iv, visitas };
-    if (!id) Object.assign(fila, { visita: s.visita, serie_id: s.serie_id });
+    if (!id) Object.assign(fila, { empresa_id: H.empresa.id, visita: s.visita, serie_id: s.serie_id });
     const btn = $("#btn-guardar");
     btn.disabled = true;
-    let sid = id, r;
-    if (id) r = await sb.from("servicios").update(fila).eq("id", id);
-    else { r = await sb.from("servicios").insert({ ...fila, empresa_id: H.empresa.id }).select("id").single(); sid = r.data?.id; }
+    // El servicio y su personal se guardan juntos: si algo falla, no queda nada a medias
+    const r = await sb.rpc("srv_guardar", { p_id: id || null, p_datos: fila, p_personal: ops });
     if (r.error) { btn.disabled = false; return aviso("Error al guardar: " + msgError(r.error), true); }
-    // Solo se tocan las personas que cambiaron (así el historial de cambios queda limpio)
-    const quitar = s.ops.filter((x) => !ops.includes(x)), agregar = ops.filter((x) => !s.ops.includes(x));
-    if (quitar.length) {
-      const d = await sb.from("servicio_personal").delete().eq("servicio_id", sid).in("personal_id", quitar);
-      if (d.error) { btn.disabled = false; return aviso("Error al quitar personal: " + msgError(d.error), true); }
-    }
-    if (agregar.length) {
-      const i = await sb.from("servicio_personal").insert(agregar.map((personal_id) => ({ servicio_id: sid, personal_id })));
-      if (i.error) { btn.disabled = false; return aviso("Error al guardar personal: " + msgError(i.error), true); }
-    }
+    const sid = r.data;
     const foto = $("#f-foto").files[0];
     if (foto) {
       const ok = await subirMedios({ bucket: "servicios", carpeta: H.empresa.id, files: [foto], tipo: "foto",
