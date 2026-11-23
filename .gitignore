@@ -15,3 +15,6 @@ supabase/.temp/
 
 # Datos de clientes (se cargan en Administración → RUT Clientes, no van al repositorio)
 receptores.csv
+
+# Configuración del ESP32 (WiFi y clave del módulo): se copia desde config.example.h
+sala-bombas/firmware/**/config.h

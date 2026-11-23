@@ -5,6 +5,8 @@
  * Envía lecturas periódicas (y eventos de movimiento inmediatos) por HTTPS
  * directo a Supabase (sistema Horus): POST /rest/v1/rpc/registrar_lectura
  *
+ * Antes de compilar: copia config.example.h como config.h y completa tus datos.
+ *
  * Librerías (Arduino IDE > Gestor de librerías):
  *   - "DHT sensor library" (Adafruit)  + "Adafruit Unified Sensor"
  *   - "Adafruit BMP280 Library"
@@ -101,10 +103,11 @@ bool enviar(const char* motivo) {
   String cuerpo;
   serializeJson(doc, cuerpo);
 
-  // HTTPS. setInsecure() cifra la conexión pero no valida el certificado del servidor
-  // (evita tener que actualizar certificados en el ESP32). La clave del módulo protege los datos.
+  // HTTPS validando el certificado de Supabase (CA_RAIZ en config.h)
   WiFiClientSecure cliente;
-  cliente.setInsecure();
+  cliente.setCACert(CA_RAIZ);
+  // Solo para pruebas, si el certificado falla: cifra pero NO comprueba con quién se conecta
+  // cliente.setInsecure();
   HTTPClient http;
   http.begin(cliente, String(SUPABASE_URL) + "/rest/v1/rpc/registrar_lectura");
   http.addHeader("Content-Type", "application/json");
@@ -155,10 +158,11 @@ void loop() {
   esp_task_wdt_reset();
   unsigned long ahora = millis();
 
-  // Evento de movimiento: se avisa de inmediato (máx. 1 aviso cada 5 s)
+  // Evento de movimiento: se avisa de inmediato (máx. 1 aviso cada 6 s; Supabase rechaza
+  // lecturas con menos de 5 s entre ellas)
   bool calentando = ahora - arranqueMs < CALENTAMIENTO_PIR_MS;
   bool pirActual = digitalRead(PIN_PIR) == HIGH;
-  if (!calentando && pirActual && !ultimoEstadoPIR && ahora - ultimoEnvio > 5000) {
+  if (!calentando && pirActual && !ultimoEstadoPIR && ahora - ultimoEnvio > 6000) {
     if (enviar("movimiento")) ultimoEnvio = ahora;
   }
   ultimoEstadoPIR = pirActual;
