@@ -67,6 +67,9 @@ Las apps originales quedaron sin cambios en `legado/` como referencia (esa carpe
 - **Ficha limitada** (cliente y visitante): empresa, ID, cliente, tipo de motor, voltaje, mantenimiento, estado y fechas. **No** muestra mediciones, notas, proceso, encargados, fotos ni videos. Se cambia en la función `equipo_limitado` de `supabase/schema.sql`.
 - Un operario o jefe de Lafken que escanea un QR de Omega ve la ficha limitada.
 - Un usuario nuevo queda **“Sin acceso”** hasta que el administrador le asigna un rol.
+- **Contraseñas**: cada usuario cambia la suya con el botón de la llave (arriba, junto a su foto). Cuando el admin
+  crea una cuenta o le cambia la contraseña desde Administración → Usuarios, la persona debe elegir una nueva al
+  entrar (así el admin no queda sabiendo la contraseña de nadie).
 - Los permisos los aplica la base de datos (Row Level Security), no solo la pantalla: aunque alguien modifique la página, no puede ver ni tocar lo que no le corresponde.
 
 ## Puesta en marcha
@@ -83,6 +86,7 @@ Sin esto, los usuarios se crean en Supabase (Authentication → Users) y el rol 
 npx supabase login
 npx supabase functions deploy usuarios --project-ref TU-PROYECTO
 ```
+Vuelve a desplegarla cada vez que cambie `supabase/functions/usuarios/index.ts`.
 
 ### 3. Conectar la página
 Copia `js/config.example.js` como `js/config.js` y pega la **Project URL** y la clave **publishable (anon)** (Project Settings → API). En el mismo archivo están las listas de sugerencias (tipos de motor, estados, tipos de servicio por empresa).
@@ -142,9 +146,11 @@ bash instalar.sh
    ```bash
    node simulador.mjs
    ```
-3. **ESP32 real**: abre `sala-bombas/firmware/horus_sala_bombas/` en Arduino IDE, completa `config.h` (WiFi, URL y clave publishable de Supabase, ID y clave del módulo) y súbelo. Conexiones y librerías: igual que en `legado/omega-sala-bombas/README.md`. Ahora envía por HTTPS directo a Supabase, así que ya no hace falta un PC servidor encendido.
+3. **ESP32 real**: en `sala-bombas/firmware/horus_sala_bombas/` copia `config.example.h` como `config.h` (no se sube al repositorio), complétalo (WiFi, URL y clave publishable de Supabase, ID y clave del módulo) y súbelo desde Arduino IDE. `config.h` trae el certificado raíz de Supabase (`CA_RAIZ`): el ESP32 comprueba que habla con Supabase de verdad. Si algún día deja de conectar por el certificado, el comentario en `config.example.h` explica cómo obtener el nuevo. Conexiones y librerías: igual que en `legado/omega-sala-bombas/README.md`. Ahora envía por HTTPS directo a Supabase, así que ya no hace falta un PC servidor encendido.
 
 Umbrales de alarma: se editan por módulo en Administración → Sala de bombas → Editar. Las lecturas se guardan 90 días.
+Cada módulo puede enviar como máximo una lectura cada 5 segundos (las más seguidas se ignoran): así, si alguien
+obtiene la clave de un módulo, no puede llenar la base de datos.
 
 ## Archivos
 | Archivo | Para qué |
@@ -160,6 +166,7 @@ Umbrales de alarma: se editan por módulo en Administración → Sala de bombas 
 | `js/tema.js` | Tema claro/oscuro antes de pintar la página |
 | `supabase/schema.sql` | Tablas, permisos por rol, funciones, historial de cambios |
 | `supabase/functions/usuarios/` | Crear usuarios y cambiar claves desde la app |
+| `supabase/pruebas.sql`, `pruebas_base.sql` | Pruebas de permisos (GitHub Actions las corre en cada cambio de `supabase/`) |
 | `migracion/` | Copia los datos de las 3 bases antiguas |
 | `sala-bombas/` | Firmware ESP32 y simulador |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Instalación como app |
@@ -168,9 +175,23 @@ Umbrales de alarma: se editan por módulo en Administración → Sala de bombas 
 - **Permisos en la base de datos**: cada tabla tiene Row Level Security. Además, el cliente y el personal de un
   registro deben ser de la misma empresa, y quién creó o subió algo (`creado_por`, `subido_por`, `usuario`…) lo
   fija la base de datos: no se puede falsificar desde la app.
-- **Archivos**: los buckets `equipos` y `ordenes` son privados y solo aceptan fotos y videos.
-- **Política de seguridad (CSP)** en `index.html`: solo se ejecutan scripts de este sitio y de los CDN de las
-  librerías; nada en línea. Si Supabase usara un dominio propio (no `*.supabase.co`), hay que agregarlo a la CSP.
+- **Archivos**: los buckets son privados y solo aceptan tipos exactos de fotos (JPG, PNG, WEBP, GIF, HEIC) y videos.
+  No aceptan SVG, que puede traer código.
+- **Política de seguridad (CSP)** en `index.html`: solo se ejecutan scripts de este sitio y las URL exactas de cada
+  librería; nada en línea. Si cambias una librería (en `index.html` o en `SCRIPTS` de `js/nucleo.js`), actualiza
+  también su URL en `script-src`. Si Supabase usara un dominio propio (no `*.supabase.co`), hay que agregarlo a la CSP.
+- **Doble verificación (recomendado)**: activa MFA con app de códigos (TOTP) en tu cuenta de supabase.com
+  (Account → Security), que tiene acceso total a la base de datos. Horus todavía no pide un código al entrar: para
+  los administradores de la app eso requiere activar TOTP en Authentication → Multi-Factor **y** agregar la pantalla
+  del código en `js/app.js` (no está hecho).
+- **Dominio compartido en GitHub Pages**: `daijinn-bkr.github.io/horus` comparte origen (y `localStorage`, donde
+  queda guardada la sesión) con cualquier otro repositorio publicado en `daijinn-bkr.github.io` (control-equipos,
+  gestor-gastos…). Una falla de seguridad (XSS) en cualquiera de ellos podría robar la sesión de un admin de Horus.
+  Para aislarlo, publícalo en un dominio propio: **Settings → Pages → Custom domain** (por ejemplo
+  `horus.tuempresa.cl`), crea el registro DNS que indica GitHub y agrega un archivo `CNAME` con ese dominio a lo que
+  publica el workflow. Al cambiarlo: agrega el dominio nuevo en `ORIGENES_PERMITIDOS` de
+  `impresora-taller/servidor.py`, la URL de instalación de la impresora en este README, y vuelve a imprimir los QR
+  (llevan la dirección desde donde se abrió la app).
 - **Librerías externas con huella (SRI)**: supabase-js en `index.html` y el resto en `SCRIPTS` de `js/nucleo.js`.
   Si cambias una versión, recalcula la huella:
   `curl -sL URL | openssl dgst -sha384 -binary | openssl base64 -A`
@@ -179,3 +200,14 @@ Umbrales de alarma: se editan por módulo en Administración → Sala de bombas 
 
 ## Límites del plan gratis de Supabase
 500 MB de base de datos y 1 GB de archivos para **todo** el sistema (antes eran 3 proyectos con su propio límite). Las fotos se reducen a ~300 KB; los videos y las lecturas de sala de bombas son lo que más ocupa. Si el proyecto no se usa en 7 días, Supabase lo pausa.
+
+Limpieza a mano (SQL Editor). Horus nunca borra el historial ni los eventos solo; hazlo cuando el espacio lo pida:
+```sql
+-- Historial de cambios de más de un año
+delete from auditoria where fecha < now() - interval '1 year';
+-- Filas antiguas del historial creadas por las lecturas del ESP32 (antes de que se dejaran de registrar)
+delete from auditoria where tabla = 'dispositivos' and accion = 'UPDATE'
+  and (antes - 'ultima_lectura') = (despues - 'ultima_lectura');
+-- Eventos de sala de bombas de más de 180 días
+delete from eventos_sala where ts < now() - interval '180 days';
+```
