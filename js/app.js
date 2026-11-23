@@ -89,7 +89,7 @@ async function router() {
     if (!m) continue;
     if (r.acceso === "admin" && !esAdmin()) return sinAcceso();
     if (r.acceso === "staff" && !esStaff()) return sinAcceso();
-    if (r.acceso === "jefe" && !esJefe()) return sinAcceso("Esta sección es solo para el jefe eléctrico y los administradores.");
+    if (r.acceso === "jefe" && !esJefe()) return sinAcceso(`Esta sección es solo para el ${nombreRol("jefe", H.empresa?.id).toLowerCase()} y los administradores.`);
     if (r.acceso === "cliente" && !esCliente()) return sinAcceso();
     if (r.modulo && !moduloActivo(r.modulo)) {
       const M = MODULOS[r.modulo];

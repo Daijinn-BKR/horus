@@ -15,7 +15,7 @@ window.HORUS_CONFIG = {
       "Iluminación", "Motores y bombas", "Puesta a tierra", "Inspección / certificación", "Otros"],
     // Tipos de servicio por empresa ("Otros" pide especificar)
     tipos_servicio: {
-      lafken: ["Desratización", "Desinfección", "Desinsectación", "Otros"],
+      lafken: ["Desratización", "Desinfección", "Desinsectación", "SEAP", "Otros"],  // SEAP: solo clientes con sanitización coordinada
       omega: ["Mantención", "Instalación", "Revisión", "Otros"],
     },
   },

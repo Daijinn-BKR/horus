@@ -106,10 +106,16 @@ async function formulario(id, desde = null) {
     // Siguiente visita: mismo cliente, servicio y personal; IV, fecha, foto y observaciones nuevos
     if (desde) s = { ...s, id: undefined, fecha: hoy(), iv: "", observaciones: "", foto: null, visita: data.visita + 1, serie_id: serie(data) };
   }
-  const [clientes, pers] = await Promise.all([
+  const [clientes, pers, coord] = await Promise.all([
     clientesEmpresa(),
     sb.from("personal").select("*").eq("empresa_id", H.empresa.id).order("nombre"),
+    opcionesServicio().includes("SEAP") ? sb.rpc("clientes_coordinados", { p_empresa: H.empresa.id }) : { data: [] },
   ]);
+  // SEAP: solo clientes con una sanitización coordinada (al editar, se mantiene el cliente que ya tenía)
+  const coordinados = new Set([...(coord.data || []), ...(s.tipos.includes("SEAP") ? [s.cliente_id] : [])]);
+  const opcionesCliente = (soloSeap, sel) => `<option value="">— Selecciona —</option>` + clientes
+    .filter((c) => !soloSeap || coordinados.has(c.id))
+    .map((c) => `<option value="${c.id}"${c.id === sel ? " selected" : ""}>${esc(c.nombre)}</option>`).join("");
   const personal = (pers.data || []).filter((p) => p.activo || s.ops.includes(p.id));
   // En un servicio nuevo, quien lo registra aparece marcado si está vinculado a Personal
   const marcados = id || desde ? s.ops : personal.filter((p) => p.activo && p.usuario_id === H.usuario.id).map((p) => p.id);
@@ -119,8 +125,8 @@ async function formulario(id, desde = null) {
     <h1>${id ? "Editar servicio" : desde ? `${ORDINAL[s.visita] ? ORDINAL[s.visita][0].toUpperCase() + ORDINAL[s.visita].slice(1) : "Siguiente"} visita` : "Nuevo servicio"}</h1>
     <form id="form-srv" class="panel" novalidate>
       <label for="f-cliente" class="req">Cliente</label>
-      <select id="f-cliente"><option value="">— Selecciona —</option>
-        ${clientes.map((c) => `<option value="${c.id}"${c.id === s.cliente_id ? " selected" : ""}>${esc(c.nombre)}</option>`).join("")}</select>
+      <select id="f-cliente">${opcionesCliente(s.tipos.includes("SEAP"), s.cliente_id)}</select>
+      <p class="muted small" id="f-seap-nota" ${s.tipos.includes("SEAP") ? "" : "hidden"}>SEAP: solo aparecen los clientes con una sanitización coordinada.</p>
       ${clientes.length ? "" : `<p class="muted small">No hay clientes. ${esAdmin() ? `<a href="#/admin/clientes">Crear clientes</a>` : "Pide al administrador que los agregue."}</p>`}
       <div class="grid2">
         <div><label for="f-fecha" class="req">Fecha</label><input id="f-fecha" type="date" value="${s.fecha}"></div>
@@ -146,7 +152,12 @@ async function formulario(id, desde = null) {
       <div class="guardar"><a class="btn" href="#/servicios">Cancelar</a>
         <button class="primary" type="submit" id="btn-guardar">${id ? "Guardar cambios" : "Guardar servicio"}</button></div>
     </form>`);
-  $("#f-tipos", v).onchange = () => { $("#otros-box").hidden = !$$("#f-tipos input:checked").some((i) => i.value === "Otros"); };
+  $("#f-tipos", v).onchange = () => {
+    const marcados = $$("#f-tipos input:checked").map((i) => i.value), seap = marcados.includes("SEAP");
+    $("#otros-box").hidden = !marcados.includes("Otros");
+    $("#f-seap-nota").hidden = !seap;
+    $("#f-cliente").innerHTML = opcionesCliente(seap, $("#f-cliente").value); // si el cliente no tiene nada coordinado, queda sin elegir
+  };
 
   $("#form-srv", v).onsubmit = async (ev) => {
     ev.preventDefault();

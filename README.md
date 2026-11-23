@@ -43,7 +43,7 @@ Las apps originales quedaron sin cambios en `legado/` como referencia (esa carpe
 | Gestionar clientes, personal, usuarios, módulos ESP32 | Sí | No | No (solo los elige en los formularios) | No | No |
 | Bobinado | Sí | Solo con permiso | Solo si el admin le da el permiso (Usuarios → Permisos) | No | No |
 | Lista de precios | Ver y cargar/eliminar listas | Solo ver | Solo ver | No | No |
-| Sanitización de estanques | Todo | Crear, actualizar y **cambiar el estado** | Crear y actualizar (no cambia el estado) | No | No |
+| Sanitización de estanques | Todo | Crear, actualizar y **cambiar el estado** | No (solo registra servicios **SEAP** a clientes con algo coordinado) | No | No |
 | Pendientes (proyectos y materiales) | Ver, crear, editar y borrar | Ver, crear y editar | No | No | No |
 | Buscador de Excel | Sí | No | No | No | No |
 | Historial de cambios | Sí | No | No | No | No |
@@ -56,11 +56,11 @@ Las apps originales quedaron sin cambios en `legado/` como referencia (esa carpe
   los que subió, y el admin cualquiera.
 - **Servicios** (Lafken): cada visita lleva su **IV** (informe de visita, 4 números o más), el **número de visitas**
   del servicio y **una foto**. Si el servicio tiene más visitas, la tarjeta muestra “Iniciar segunda visita” (tercera…),
-  que abre la visita siguiente con el mismo cliente, tipo y personal.
-- **Sanitización de estanques** (Lafken): tres pestañas. **Cotizado**: dónde, cliente y cuántos estanques.
-  Cuando se aprueba, el supervisor o un admin la pasa a **Coordinado**, donde se anota quién va, cuándo y cuántos
-  estanques quedan por hacer (cualquier operario de Lafken lo puede actualizar). Solo el supervisor o un admin la pasa
-  a **Finalizado**. El supervisor es un usuario con rol *Jefe* en la empresa Lafken.
+  que abre la visita siguiente con el mismo cliente, tipo y personal. Al marcar el tipo **SEAP**, solo se pueden
+  elegir clientes que tengan una sanitización en estado **Coordinado** (lo revisa también la base de datos).
+- **Sanitización de estanques** (Lafken): solo la ven y usan el supervisor y el admin. Tres pestañas. **Cotizado**:
+  dónde, cliente y cuántos estanques. Cuando se aprueba, se pasa a **Coordinado**, donde se anota quién va, cuándo y
+  cuántos estanques quedan por hacer. Después se pasa a **Finalizado**. El supervisor es un usuario con rol *Jefe* en la empresa Lafken.
 - **Pendientes**: cada proyecto tiene lugar, fecha estimada, estado y una lista de materiales (cantidad × precio
   unitario = subtotal). El total se calcula solo; si los precios son netos, se marca “sumar IVA (19%)”.
 

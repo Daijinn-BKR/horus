@@ -217,5 +217,37 @@ do $$ begin
   raise notice 'OK: buckets con tipos exactos';
 end $$;
 
+-- ---------- Sanitización solo para supervisor y admin; SEAP solo con algo coordinado ----------
+insert into sanitizaciones (id, empresa_id, cliente_id, lugar, estanques) values
+  ('00000000-0000-0000-0000-0000000000a1', 'lafken', '00000000-0000-0000-0000-0000000000c3', 'Planta', 2);
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', true);
+set local role authenticated;
+do $$ declare ok boolean := false; begin
+  if exists (select 1 from sanitizaciones) then raise exception 'FALLA: un operario ve las sanitizaciones'; end if;
+  if exists (select 1 from clientes_coordinados('lafken')) then raise exception 'FALLA: cliente sin nada coordinado aparece para SEAP'; end if;
+  begin
+    perform srv_guardar(null, '{"empresa_id":"lafken","cliente_id":"00000000-0000-0000-0000-0000000000c3","fecha":"2026-02-01",
+                               "tipos":["SEAP"],"iv":"5555"}', array['00000000-0000-0000-0000-0000000000e1']::uuid[]);
+  exception when others then ok := sqlerrm like 'SEAP:%';
+  end;
+  if not ok then raise exception 'FALLA: se registró un SEAP sin sanitización coordinada'; end if;
+  raise notice 'OK: operario sin acceso a sanitización; SEAP rechazado sin coordinación';
+end $$;
+reset role;
+select set_config('request.jwt.claim.sub', '', true);  -- sin sesión, como el SQL Editor
+update sanitizaciones set estado = 'Coordinado' where id = '00000000-0000-0000-0000-0000000000a1';
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', true);
+set local role authenticated;
+do $$ begin
+  if (select array_agg(x) from clientes_coordinados('lafken') x) is distinct from array['00000000-0000-0000-0000-0000000000c3']::uuid[] then
+    raise exception 'FALLA: clientes_coordinados() no devuelve el cliente coordinado';
+  end if;
+  if exists (select 1 from clientes_coordinados('omega')) then raise exception 'FALLA: clientes_coordinados() muestra otra empresa'; end if;
+  perform srv_guardar(null, '{"empresa_id":"lafken","cliente_id":"00000000-0000-0000-0000-0000000000c3","fecha":"2026-02-01",
+                             "tipos":["SEAP"],"iv":"5555"}', array['00000000-0000-0000-0000-0000000000e1']::uuid[]);
+  raise notice 'OK: SEAP con sanitización coordinada';
+end $$;
+reset role;
+
 rollback;
 \echo 'Todas las pruebas pasaron.'

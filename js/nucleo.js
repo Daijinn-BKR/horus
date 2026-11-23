@@ -23,7 +23,7 @@ export const MODULOS = {
   precios:     { titulo: "Lista de precios", ruta: "#/precios" },
   ordenes:     { titulo: "Órdenes de trabajo", ruta: "#/ordenes" },
   pendientes:  { titulo: "Pendientes",     ruta: "#/pendientes", soloJefe: true },
-  sanitizacion: { titulo: "Sanitización",  ruta: "#/sanitizacion" },
+  sanitizacion: { titulo: "Sanitización",  ruta: "#/sanitizacion", soloJefe: true },
 };
 // Módulos que nunca ven los clientes
 export const SOLO_PERSONAL = ["inventario", "bobinado", "precios", "ordenes", "pendientes", "sanitizacion"];

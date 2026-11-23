@@ -1244,9 +1244,8 @@ grant  execute on function pp_guardar(uuid, jsonb, jsonb), ot_puede_subir(uuid),
 
 -- =====================================================================
 --  Sanitización de estanques (Lafken): Cotizado → Coordinado → Finalizado.
---  El personal de la empresa crea la cotización y actualiza la coordinación (quién va, cuándo,
---  cuántos estanques quedan). Solo el supervisor (rol "jefe" de Lafken) o un admin cambia el estado.
---  Solo admin borra.
+--  Solo el supervisor (rol "jefe" de Lafken) y el admin la ven, crean, actualizan y cambian el estado.
+--  Solo admin borra. Los operarios solo ven qué clientes tienen algo coordinado (servicio SEAP, más abajo).
 -- =====================================================================
 update empresas set modulos = modulos || '{sanitizacion}'::text[]
  where id = 'lafken' and not ('sanitizacion' = any(modulos));
@@ -1305,9 +1304,9 @@ create trigger san_proteger before insert or update on sanitizaciones
 
 call horus_auditar(array['sanitizaciones']);
 call horus_preparar_rls(array['sanitizaciones']);
-create policy "san_ver"    on sanitizaciones for select to authenticated using (es_staff(empresa_id));
-create policy "san_crear"  on sanitizaciones for insert to authenticated with check (es_staff(empresa_id));
-create policy "san_editar" on sanitizaciones for update to authenticated using (es_staff(empresa_id)) with check (es_staff(empresa_id));
+create policy "san_ver"    on sanitizaciones for select to authenticated using (es_jefe(empresa_id));
+create policy "san_crear"  on sanitizaciones for insert to authenticated with check (es_jefe(empresa_id));
+create policy "san_editar" on sanitizaciones for update to authenticated using (es_jefe(empresa_id)) with check (es_jefe(empresa_id));
 create policy "san_borrar" on sanitizaciones for delete to authenticated using (es_admin());
 
 -- =====================================================================
@@ -1613,5 +1612,32 @@ begin
     end;
   end loop;
 end $$;
+
+-- =====================================================================
+--  Servicio SEAP (Lafken): solo para clientes con una sanitización en estado Coordinado
+-- =====================================================================
+-- Clientes de la empresa con una sanitización coordinada (los operarios no ven las sanitizaciones)
+create or replace function clientes_coordinados(p_empresa text) returns setof uuid
+language sql stable security definer set search_path = public as $$
+  select distinct cliente_id from sanitizaciones
+   where empresa_id = p_empresa and estado = 'Coordinado' and es_staff(p_empresa);
+$$;
+revoke execute on function clientes_coordinados(text) from anon, public;
+grant  execute on function clientes_coordinados(text) to authenticated;
+
+-- Se revisa al crear el servicio, al agregarle SEAP o al cambiarle el cliente. Sin sesión (migración) no se revisa.
+create or replace function servicio_seap() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not ('SEAP' = any(new.tipos)) then return new; end if;
+  if tg_op = 'UPDATE' and 'SEAP' = any(old.tipos) and new.cliente_id is not distinct from old.cliente_id then return new; end if;
+  if not exists (select 1 from sanitizaciones where cliente_id = new.cliente_id and estado = 'Coordinado') then
+    raise exception 'SEAP: el cliente no tiene una sanitización coordinada';
+  end if;
+  return new;
+end $$;
+drop trigger if exists servicio_seap on servicios;
+create trigger servicio_seap before insert or update on servicios
+  for each row execute function servicio_seap();
 
 notify pgrst, 'reload schema';

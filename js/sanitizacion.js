@@ -1,5 +1,5 @@
 // Horus · Sanitización de estanques (Lafken): Cotizado → Coordinado → Finalizado.
-// Cualquier operario crea y actualiza; solo el supervisor (rol jefe) o admin cambia el estado (lo revisa la base de datos).
+// Solo el supervisor (rol jefe de Lafken) y el admin la ven, la editan y cambian el estado (lo revisa la base de datos).
 import {
   sb, H, $, esc, aviso, msgError, msgCarga, dato, vista, cargando, fecha, hoy, descargarCSV,
   clientesEmpresa, esAdmin, esJefe,
@@ -12,12 +12,12 @@ const chip = (e) => `<span class="chip ${CLASE[e]}">${esc(e)}</span>`;
 const ruta = (e) => "#/sanitizacion" + (e === "Cotizado" ? "" : "/" + e.toLowerCase());
 
 export const rutas = [
-  { patron: /^#\/sanitizacion$/, modulo: "sanitizacion", acceso: "staff", render: () => lista("Cotizado") },
-  { patron: /^#\/sanitizacion\/(coordinado|finalizado)$/, modulo: "sanitizacion", acceso: "staff",
+  { patron: /^#\/sanitizacion$/, modulo: "sanitizacion", acceso: "jefe", render: () => lista("Cotizado") },
+  { patron: /^#\/sanitizacion\/(coordinado|finalizado)$/, modulo: "sanitizacion", acceso: "jefe",
     render: (e) => lista(e[0].toUpperCase() + e.slice(1)) },
-  { patron: /^#\/sanitizacion\/nuevo$/, modulo: "sanitizacion", acceso: "staff", render: () => formulario(null) },
-  { patron: /^#\/sanitizacion\/([^/]+)\/editar$/, modulo: "sanitizacion", acceso: "staff", render: (id) => formulario(id) },
-  { patron: /^#\/sanitizacion\/([^/]+)$/, modulo: "sanitizacion", acceso: "staff", render: (id) => ficha(id) },
+  { patron: /^#\/sanitizacion\/nuevo$/, modulo: "sanitizacion", acceso: "jefe", render: () => formulario(null) },
+  { patron: /^#\/sanitizacion\/([^/]+)\/editar$/, modulo: "sanitizacion", acceso: "jefe", render: (id) => formulario(id) },
+  { patron: /^#\/sanitizacion\/([^/]+)$/, modulo: "sanitizacion", acceso: "jefe", render: (id) => ficha(id) },
 ];
 
 // ---------- Lista (una pestaña por estado) ----------
