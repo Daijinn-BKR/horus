@@ -95,6 +95,8 @@ button.logo-empresa.on::after { content: ""; position: absolute; left: 8px; righ
 .barra .der { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .barra select { width: auto; min-height: 36px; padding: 4px 8px; }
 .quien { font-size: 13px; color: var(--muted); text-align: right; line-height: 1.2; }
+.link-nombre { background: none; border: 0; padding: 0; min-height: 0; font: inherit; color: inherit; cursor: pointer; }
+.link-nombre:hover, .link-nombre:focus-visible { color: var(--text); text-decoration: underline; }
 nav.modulos { display: flex; gap: 4px; padding: 0 12px 8px; overflow-x: auto; scrollbar-width: thin; }
 nav.modulos a { padding: 7px 14px; border-radius: 8px; color: var(--muted); text-decoration: none; white-space: nowrap; font-size: 15px; }
 nav.modulos a.on { background: var(--accent); color: var(--accent-text); font-weight: 600; }

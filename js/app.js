@@ -1,7 +1,7 @@
 // Horus · arranque, sesión, navegación y rutas
 import {
   sb, H, configurado, MODULOS, nombreRol, $, esc, modulosVisibles, moduloActivo,
-  esAdmin, esStaff, esJefe, esCliente, limpiarVista, cerrarLector, sinAcceso, olvidarClientes,
+  esAdmin, esStaff, esJefe, esCliente, limpiarVista, cerrarLector, sinAcceso, olvidarClientes, aviso, msgError,
 } from "./nucleo.js";
 import * as equipos from "./equipos.js";
 import * as inventario from "./inventario.js";
@@ -118,7 +118,7 @@ function pintarNav() {
   pintarEmpresas();
   const p = H.perfil;
   const donde = esAdmin() ? "" : esCliente() ? H.cliente?.nombre : H.empresa?.nombre;
-  $("#quien").innerHTML = `${esc(p.nombre || p.email)}<br>${esc(nombreRol(p.rol, H.empresa?.id))}${donde ? " · " + esc(donde) : ""}`;
+  $("#quien").innerHTML = `<button type="button" class="link-nombre" id="btn-mi-nombre" title="Cambiar mi nombre">${esc(p.nombre || p.email)} ✎</button><br>${esc(nombreRol(p.rol, H.empresa?.id))}${donde ? " · " + esc(donde) : ""}`;
   document.documentElement.style.setProperty("--accent", H.empresa?.color || "");
   if (!H.empresa?.color) document.documentElement.style.removeProperty("--accent");
 }
@@ -156,6 +156,18 @@ $("#empresas-app").addEventListener("click", (ev) => {
   const sigue = Object.values(MODULOS).some((m) => m.ruta === actual) && moduloActivo(Object.keys(MODULOS).find((k) => MODULOS[k].ruta === actual));
   const destino = actual.startsWith("#/admin") ? location.hash : sigue ? actual : primero ? MODULOS[primero].ruta : "#/admin";
   if (location.hash === destino) router(); else location.hash = destino;
+});
+
+// Cada usuario cambia su propio nombre (la base de datos solo deja tocar el nombre de quien tiene la sesión)
+$("#quien").addEventListener("click", async (ev) => {
+  if (!ev.target.closest("#btn-mi-nombre")) return;
+  const nuevo = prompt("Tu nombre:", H.perfil.nombre || "");
+  if (nuevo == null || nuevo.trim() === (H.perfil.nombre || "")) return;
+  const { error } = await sb.rpc("cambiar_mi_nombre", { p_nombre: nuevo });
+  if (error) return aviso(msgError(error), true);
+  H.perfil.nombre = nuevo.trim();
+  pintarNav();
+  aviso("Nombre actualizado.");
 });
 
 // ---------- Sesión ----------

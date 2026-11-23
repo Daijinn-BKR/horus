@@ -1388,6 +1388,20 @@ create policy "horus_srv_borrar" on storage.objects for delete to authenticated
   using (bucket_id = 'servicios' and (es_admin() or owner_id = auth.uid()::text));
 
 -- =====================================================================
+--  Mi nombre: cada usuario cambia SOLO su propio nombre (no su rol, empresa ni permisos)
+-- =====================================================================
+create or replace function cambiar_mi_nombre(p_nombre text) returns void
+language plpgsql security definer set search_path = public as $$
+declare v text := trim(coalesce(p_nombre, ''));
+begin
+  if auth.uid() is null then raise exception 'Inicia sesión' using errcode = '42501'; end if;
+  if length(v) = 0 or length(v) > 80 then raise exception 'Escribe tu nombre (máximo 80 caracteres)'; end if;
+  update perfiles set nombre = v where id = auth.uid();
+end $$;
+revoke execute on function cambiar_mi_nombre(text) from anon, public;
+grant  execute on function cambiar_mi_nombre(text) to authenticated;
+
+-- =====================================================================
 -- ============ INTEGRIDAD: EMPRESAS, AUTORES Y TIPOS DE ARCHIVO ============
 -- =====================================================================
 
