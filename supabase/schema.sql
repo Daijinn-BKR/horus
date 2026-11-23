@@ -397,7 +397,9 @@ begin
   elsif tg_op = 'UPDATE' then v_antes := to_jsonb(old); v_despues := to_jsonb(new);
   else v_antes := to_jsonb(old);
   end if;
-  if tg_op = 'UPDATE' and (v_antes - 'actualizado_en') = (v_despues - 'actualizado_en') then return null; end if;
+  -- Sin cambios reales (o solo la hora de la última lectura del ESP32, que cambia cada 10 s): no se registra
+  if tg_op = 'UPDATE' and (v_antes - 'actualizado_en' - 'ultima_lectura')
+                        = (v_despues - 'actualizado_en' - 'ultima_lectura') then return null; end if;
   insert into auditoria (usuario_id, usuario_email, tabla, accion, registro_id, antes, despues)
   values (auth.uid(), (select email from perfiles where id = auth.uid()), tg_table_name, tg_op,
           coalesce(v_despues->>'servicio_id', v_antes->>'servicio_id',
@@ -484,8 +486,10 @@ create policy "disp_crear"  on dispositivos for insert to authenticated with che
 create policy "disp_editar" on dispositivos for update to authenticated using (es_admin()) with check (es_admin());
 create policy "disp_borrar" on dispositivos for delete to authenticated using (es_admin());
 -- dispositivo_claves: sin políticas → nadie la lee ni escribe desde la app
-create policy "lecturas_ver" on lecturas     for select to authenticated using (puede_ver_dispositivo(dispositivo_id));
-create policy "eventos_ver"  on eventos_sala for select to authenticated using (puede_ver_dispositivo(dispositivo_id));
+-- Lecturas y eventos: se ven si se ve el dispositivo (usa la política de dispositivos, que tiene pocas filas;
+-- revisar el permiso fila por fila hacía que el gráfico de 31 días pasara de 8 s y Supabase lo cortara)
+create policy "lecturas_ver" on lecturas     for select to authenticated using (dispositivo_id in (select id from dispositivos));
+create policy "eventos_ver"  on eventos_sala for select to authenticated using (dispositivo_id in (select id from dispositivos));
 
 -- Historial de cambios: solo admin lo ve; nadie lo puede escribir ni borrar
 create policy "auditoria_ver" on auditoria for select to authenticated using (es_admin());
@@ -558,6 +562,10 @@ begin
   if d.id is null or h is null or crypt(coalesce(p_clave, ''), h) <> h then
     raise exception 'Dispositivo o clave inválidos' using errcode = '28000';
   end if;
+  -- Máximo una lectura cada 5 s: una clave robada no puede llenar la base
+  if d.ultima_lectura > now() - interval '5 seconds' then
+    return jsonb_build_object('ok', false, 'motivo', 'muy_seguido');
+  end if;
 
   insert into lecturas (dispositivo_id, motivo, temperatura, humedad, punto_rocio, presion, temperatura_bmp,
                         movimiento, pir_calentando, rssi, uptime_s, errores)
@@ -623,13 +631,14 @@ $$;
 
 -- ============ ARCHIVOS (fotos y videos de equipos) ============
 -- ¿El archivo ya tiene su registro? Si no lo tiene (falló el paso de guardarlo), quien lo subió lo puede borrar.
--- (plpgsql: la tabla ot_archivos se crea más abajo y aquí solo se consulta al usarla)
+-- (plpgsql: las tablas ot_archivos y la columna servicios.foto se crean más abajo y aquí solo se consulta al usarla)
 create or replace function ruta_registrada(p_ruta text) returns boolean
 language plpgsql stable security definer set search_path = public as $$
 begin
   return exists (select 1 from fotos_equipo where ruta = p_ruta)
       or exists (select 1 from videos_equipo where ruta = p_ruta)
-      or exists (select 1 from ot_archivos where ruta = p_ruta);
+      or exists (select 1 from ot_archivos where ruta = p_ruta)
+      or exists (select 1 from servicios where foto = p_ruta);
 end $$;
 -- Bucket privado; 50 MB por archivo. Ruta: <empresa>/<equipo>/<archivo>
 insert into storage.buckets (id, name, public, file_size_limit)
@@ -647,7 +656,8 @@ create policy "horus_archivos_borrar" on storage.objects for delete to authentic
   using (bucket_id = 'equipos' and (es_admin() or (owner_id = auth.uid()::text and not ruta_registrada(name))));
 
 -- ============ TIEMPO REAL ============
-call horus_tiempo_real(array['equipos','productos','movimientos','servicios','lecturas','eventos_sala']);
+-- Solo las tablas que la app escucha (sb.channel): Sala de bombas consulta cada 5 s y no las necesita
+call horus_tiempo_real(array['equipos','productos','movimientos']);
 
 -- =====================================================================
 -- ============ PERMISOS ESPECIALES, BOBINADO Y LISTA DE PRECIOS ============
@@ -1385,7 +1395,7 @@ create policy "horus_srv_leer"   on storage.objects for select to authenticated
 create policy "horus_srv_subir"  on storage.objects for insert to authenticated
   with check (bucket_id = 'servicios' and es_staff((storage.foldername(name))[1]));
 create policy "horus_srv_borrar" on storage.objects for delete to authenticated
-  using (bucket_id = 'servicios' and (es_admin() or owner_id = auth.uid()::text));
+  using (bucket_id = 'servicios' and (es_admin() or (owner_id = auth.uid()::text and not ruta_registrada(name))));
 
 -- =====================================================================
 --  Mi nombre: cada usuario cambia SOLO su propio nombre (no su rol, empresa ni permisos)
@@ -1503,11 +1513,105 @@ begin
   end loop;
 end $$;
 
--- Los buckets solo aceptan fotos y videos (nada de páginas web u otros archivos)
-update storage.buckets set allowed_mime_types = array['image/*', 'video/*'] where id in ('equipos', 'ordenes', 'servicios');
-update storage.buckets set allowed_mime_types = array['image/*'] where id = 'avatares';
+-- Los buckets solo aceptan fotos y videos (nada de páginas web, SVG u otros archivos que puedan traer código)
+update storage.buckets set allowed_mime_types = array['image/jpeg','image/png','image/webp','image/gif',
+  'image/heic','image/heif','video/mp4','video/quicktime','video/webm','video/3gpp','video/x-matroska','video/x-msvideo']
+ where id in ('equipos','ordenes','servicios');
+update storage.buckets set allowed_mime_types = array['image/jpeg','image/png','image/webp','image/heic','image/heif']
+ where id = 'avatares';
 
 revoke all on function ruta_registrada(text) from public, anon;
 grant execute on function ruta_registrada(text) to authenticated;
+
+-- =====================================================================
+-- ============ ARREGLOS DE AUDITORÍA ============
+-- =====================================================================
+
+-- ---------- Stock: solo cambia con entradas y salidas (movimientos) ----------
+create or replace function productos_stock_protegido() returns trigger language plpgsql as $$
+begin
+  -- pg_trigger_depth() = 1: cambio directo. Desde aplicar_movimiento() la profundidad es 2.
+  -- Sin sesión (SQL Editor, migración) se permite.
+  if new.stock is distinct from old.stock and pg_trigger_depth() = 1 and auth.uid() is not null then
+    raise exception 'El stock solo cambia con entradas y salidas';
+  end if;
+  return new;
+end $$;
+drop trigger if exists productos_stock_protegido on productos;
+create trigger productos_stock_protegido before update on productos
+  for each row execute function productos_stock_protegido();
+
+-- ---------- Contraseñas: cambio obligatorio al primer ingreso ----------
+-- La función "usuarios" la deja en true al crear la cuenta o cuando el admin cambia la clave.
+alter table perfiles add column if not exists debe_cambiar_clave boolean not null default false;
+-- Cada usuario avisa que ya cambió SU contraseña (solo toca su propia fila)
+create or replace function clave_cambiada() returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Inicia sesión' using errcode = '42501'; end if;
+  update perfiles set debe_cambiar_clave = false where id = auth.uid();
+end $$;
+revoke execute on function clave_cambiada() from anon, public;
+grant  execute on function clave_cambiada() to authenticated;
+
+-- ---------- Servicios: guardar el servicio y su personal en una sola operación ----------
+-- Sin security definer: deciden las políticas de servicios y servicio_personal.
+-- Del personal solo se borra a quien se quitó y se inserta a quien se agregó (historial limpio).
+create or replace function srv_guardar(p_id uuid, p_datos jsonb, p_personal uuid[]) returns uuid
+language plpgsql set search_path = public as $$
+declare v_id uuid := p_id;
+  v_tipos text[] := array(select jsonb_array_elements_text(coalesce(p_datos->'tipos', '[]'::jsonb)));
+begin
+  if coalesce(cardinality(p_personal), 0) = 0 then raise exception 'Selecciona al menos una persona'; end if;
+  if v_id is null then
+    insert into servicios (empresa_id, cliente_id, fecha, tipos, otros_detalle, observaciones, iv, visitas, visita, serie_id)
+    values (p_datos->>'empresa_id', (p_datos->>'cliente_id')::uuid, (p_datos->>'fecha')::date, v_tipos,
+            nullif(trim(coalesce(p_datos->>'otros_detalle', '')), ''), nullif(trim(coalesce(p_datos->>'observaciones', '')), ''),
+            nullif(trim(coalesce(p_datos->>'iv', '')), ''), coalesce((p_datos->>'visitas')::int, 1),
+            coalesce((p_datos->>'visita')::int, 1), nullif(p_datos->>'serie_id', '')::uuid)
+    returning id into v_id;
+  else
+    update servicios set
+      cliente_id = (p_datos->>'cliente_id')::uuid, fecha = (p_datos->>'fecha')::date, tipos = v_tipos,
+      otros_detalle = nullif(trim(coalesce(p_datos->>'otros_detalle', '')), ''),
+      observaciones = nullif(trim(coalesce(p_datos->>'observaciones', '')), ''),
+      iv = nullif(trim(coalesce(p_datos->>'iv', '')), ''), visitas = coalesce((p_datos->>'visitas')::int, visitas)
+    where id = v_id;
+    if not found then raise exception 'No se encontró el servicio'; end if;
+    delete from servicio_personal where servicio_id = v_id and personal_id <> all(p_personal);
+  end if;
+  insert into servicio_personal (servicio_id, personal_id)
+  select v_id, x from unnest(p_personal) x
+   where not exists (select 1 from servicio_personal sp where sp.servicio_id = v_id and sp.personal_id = x)
+   group by x;
+  return v_id;
+end $$;
+revoke execute on function srv_guardar(uuid, jsonb, uuid[]) from anon, public;
+grant  execute on function srv_guardar(uuid, jsonb, uuid[]) to authenticated;
+
+-- ---------- Ficha pública (QR): el ID del equipo lo decide la base de datos ----------
+-- 10 caracteres para equipos nuevos (más difícil de adivinar). Los IDs existentes no cambian: los QR impresos siguen sirviendo.
+alter table equipos alter column id set default substr(md5(gen_random_uuid()::text), 1, 10);
+create or replace function equipos_id_seguro() returns trigger language plpgsql as $$
+begin
+  -- Con sesión se ignora el ID enviado; sin sesión (migración con la clave secreta) se respeta
+  if auth.uid() is not null then new.id := substr(md5(gen_random_uuid()::text), 1, 10); end if;
+  return new;
+end $$;
+drop trigger if exists equipos_id_seguro on equipos;
+create trigger equipos_id_seguro before insert on equipos
+  for each row execute function equipos_id_seguro();
+
+-- ---------- Tiempo real: fuera las tablas que la app no escucha ----------
+do $$
+declare t text;
+begin
+  foreach t in array array['lecturas','eventos_sala','servicios'] loop
+    begin
+      execute format('alter publication supabase_realtime drop table %I', t);
+    exception when undefined_object or object_not_in_prerequisite_state then null;  -- ya no estaba
+    end;
+  end loop;
+end $$;
 
 notify pgrst, 'reload schema';

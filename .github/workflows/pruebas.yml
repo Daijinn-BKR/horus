@@ -1,0 +1,41 @@
+name: Pruebas de la base de datos
+
+on:
+  push:
+    paths: ["supabase/**", ".github/workflows/pruebas.yml"]
+  pull_request:
+    paths: ["supabase/**", ".github/workflows/pruebas.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: pruebas
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: pruebas
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stubs de Supabase (auth, storage, roles)
+        run: psql -v ON_ERROR_STOP=1 -q -f supabase/pruebas_base.sql
+
+      - name: schema.sql (primera vez)
+        run: psql -v ON_ERROR_STOP=1 -q -f supabase/schema.sql
+
+      - name: schema.sql (segunda vez, debe poder repetirse)
+        run: psql -v ON_ERROR_STOP=1 -q -f supabase/schema.sql
+
+      - name: Pruebas
+        run: psql -v ON_ERROR_STOP=1 -q -o /dev/null -f supabase/pruebas.sql
