@@ -4,7 +4,7 @@
 // Instalar:  npx supabase login
 //            npx supabase functions deploy usuarios --project-ref TU-PROYECTO
 // SUPABASE_URL, SUPABASE_ANON_KEY y SUPABASE_SERVICE_ROLE_KEY las entrega Supabase automáticamente.
-import { createClient } from "npm:@supabase/supabase-js@2.45.4";
+import { createClient } from "npm:@supabase/supabase-js@2.119.0";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -45,9 +45,10 @@ Deno.serve(async (req) => {
     const { data: nuevo, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
     if (error) return responder({ error: /already/i.test(error.message) ? "Ya existe un usuario con ese correo" : error.message }, 400);
 
-    // El trigger crea el perfil como "pendiente"; aquí se asigna el rol pedido
+    // El trigger crea el perfil como "pendiente"; aquí se asigna el rol pedido.
+    // debe_cambiar_clave: al entrar por primera vez la persona elige su propia contraseña.
     const { error: e2 } = await admin.from("perfiles").update({
-      nombre: b.nombre || null, rol,
+      nombre: b.nombre || null, rol, debe_cambiar_clave: true,
       empresa_id: rol === "operario" || rol === "jefe" ? b.empresa_id : null,
       cliente_id: rol === "cliente" ? b.cliente_id : null,
     }).eq("id", nuevo.user.id);
@@ -61,7 +62,10 @@ Deno.serve(async (req) => {
   if (b.accion === "clave") {
     if (!b.id || String(b.password || "").length < 8) return responder({ error: "Contraseña inválida" }, 400);
     const { error } = await admin.auth.admin.updateUserById(b.id, { password: String(b.password) });
-    return error ? responder({ error: error.message }, 400) : responder({ ok: true });
+    if (error) return responder({ error: error.message }, 400);
+    // La contraseña la conoce el admin: la persona debe cambiarla al entrar
+    const { error: e2 } = await admin.from("perfiles").update({ debe_cambiar_clave: true }).eq("id", b.id);
+    return e2 ? responder({ error: e2.message }, 400) : responder({ ok: true });
   }
 
   if (b.accion === "eliminar") {

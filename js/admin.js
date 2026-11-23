@@ -91,14 +91,16 @@ async function usuarios() {
       <h2>Nuevo usuario</h2>
       <label for="n-email" class="req">Correo</label><input id="n-email" type="email" required>
       <label for="n-nombre">Nombre</label><input id="n-nombre">
-      <label for="n-clave" class="req">Contraseña inicial (mín. 8)</label><input id="n-clave" type="text" minlength="8" required autocomplete="new-password">
+      <label for="n-clave" class="req">Contraseña inicial (mín. 8)</label>
+      <div style="display:flex;gap:8px"><input id="n-clave" type="password" minlength="8" required autocomplete="new-password" style="flex:1">
+        <button type="button" class="chico" id="n-ver-clave" aria-pressed="false">Mostrar</button></div>
       <label for="n-rol">Rol</label><select id="n-rol">${optRoles("operario")}</select>
       <div id="n-emp-w"><label for="n-emp">Empresa</label><select id="n-emp">${optEmpresas(H.empresa?.id)}</select>
         <div class="checks" style="margin-top:10px"><label><input type="checkbox" id="n-personal" checked> Agregar también a Personal (para asignarlo a servicios)</label>
           ${Object.entries(PERMISOS).map(([k, t]) => `<label><input type="checkbox" class="n-perm" value="${k}"> Puede entrar a ${t}</label>`).join("")}</div></div>
       <div id="n-cli-w" hidden><label for="n-cli">Cliente</label><select id="n-cli">${optClientes()}</select>
         <div class="ayuda">${todosClientes.length ? "El usuario verá solo los datos de este cliente." : "Aún no hay clientes: créalos primero en Administración → Clientes."}</div></div>
-      <p class="muted small">Entrégale el correo y la contraseña a la persona; podrá cambiarla después.</p>
+      <p class="muted small">Entrégale el correo y la contraseña a la persona; al entrar por primera vez tendrá que elegir una nueva.</p>
       <div class="pie"><button type="button" data-cerrar>Cancelar</button><button class="primary" type="submit">Crear</button></div>
     </form></dialog>`, true);
 
@@ -106,6 +108,12 @@ async function usuarios() {
   sync($("#n-rol"), $("#n-emp-w"), $("#n-cli-w"));
   $("#n-rol").onchange = () => sync($("#n-rol"), $("#n-emp-w"), $("#n-cli-w"));
   $("#btn-nuevo").onclick = () => $("#dlg-u").showModal();
+  $("#n-ver-clave").onclick = (ev) => {
+    const ver = $("#n-clave").type === "password";
+    $("#n-clave").type = ver ? "text" : "password";
+    ev.target.textContent = ver ? "Ocultar" : "Mostrar";
+    ev.target.setAttribute("aria-pressed", ver);
+  };
   $("[data-cerrar]", v).onclick = () => $("#dlg-u").close();
 
   $("#form-u").onsubmit = async (ev) => {
@@ -170,7 +178,7 @@ async function usuarios() {
       const clave = prompt("Nueva contraseña para este usuario (mínimo 8 caracteres):");
       if (!clave) return;
       if (clave.length < 8) return aviso("La contraseña debe tener al menos 8 caracteres.", true);
-      if (await funcionUsuarios({ accion: "clave", id, password: clave })) aviso("Contraseña cambiada.");
+      if (await funcionUsuarios({ accion: "clave", id, password: clave })) aviso("Contraseña cambiada. La persona deberá elegir una nueva al entrar.");
     });
     $(".u-borrar", tr) && ($(".u-borrar", tr).onclick = async () => {
       if (!confirm("¿Eliminar este usuario? Ya no podrá entrar. (Si solo quieres bloquearlo, desmarca Activo.)")) return;

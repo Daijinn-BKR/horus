@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- Seguridad: solo se ejecutan scripts de este sitio y de los CDN listados (nada en línea).
+<!-- Seguridad: solo se ejecutan scripts de este sitio y las URL exactas de cada librería (nada en línea).
+     Si cambias una librería aquí o en SCRIPTS de js/nucleo.js, actualiza también su URL en script-src.
      Si Supabase usa un dominio propio (no *.supabase.co), hay que agregarlo en img-src, media-src y connect-src. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://127.0.0.1:9101; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://127.0.0.1:9101; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <title>Horus</title>
 <meta name="description" content="Sistema de gestión Omega Eléctrica · Lafken Austral">
 <meta name="theme-color" content="#1f5fbf">
@@ -59,7 +60,8 @@
         <button class="ghost chico btn-tema" type="button" aria-label="Cambiar a modo oscuro" title="Modo claro / oscuro"></button>
         <span class="quien" id="quien"></span>
         <button type="button" class="avatar" id="btn-mi-foto" title="Cambiar mi foto de perfil" aria-label="Cambiar mi foto de perfil"></button>
-        <input type="file" id="in-mi-foto" accept="image/*" hidden>
+        <input type="file" id="in-mi-foto" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden>
+        <button type="button" class="ghost chico btn-icono" id="btn-mi-clave" title="Cambiar mi contraseña" aria-label="Cambiar mi contraseña"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M16 7l3 3M18 5l2 2"/></svg></button>
         <button class="ghost chico" id="btn-instalar" hidden>Instalar app</button>
         <button class="ghost chico" id="btn-salir">Salir</button>
       </div>
@@ -72,8 +74,8 @@
 <div id="etiqueta"></div>
 <div id="aviso" role="status" aria-live="polite"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"
-  integrity="sha384-GFr3yTh5lJznCbZfpTtXnwboFsxqtTQoeTZCRHhE0579KrRmlCzen5AA8ohaB5ug" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js"
+  integrity="sha384-gnyZit14c5lnGcarmA166QQjjJXpucw25ogZXuwH3HxxY904zHkBqmxVpelsPorb" crossorigin="anonymous"></script>
 <script src="js/config.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>

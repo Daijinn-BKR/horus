@@ -70,6 +70,7 @@ async function router() {
     return;
   }
   if (!H.perfil) return; // aún cargando el perfil
+  if (H.perfil.debe_cambiar_clave) return pantallaClave(true);
 
   mostrarPantalla("app");
   pintarNav();
@@ -199,6 +200,42 @@ $("#quien").addEventListener("click", async (ev) => {
   pintarNav();
   aviso("Nombre actualizado.");
 });
+
+// Cambiar mi contraseña. obligatorio: primer ingreso o el admin la cambió (no se puede saltar)
+function pantallaClave(obligatorio) {
+  mensaje(`<div class="logo"><img src="icons/emblema.png" alt="">horus</div>
+    <form id="form-clave" novalidate>
+      <h2 style="margin-top:16px">${obligatorio ? "Crea tu contraseña" : "Cambiar mi contraseña"}</h2>
+      ${obligatorio ? `<p class="muted">Es tu primer ingreso o el administrador te dio una contraseña nueva. Elige una que solo tú conozcas.</p>` : ""}
+      <label for="clave-1">Nueva contraseña (mínimo 8 caracteres)</label>
+      <input id="clave-1" type="password" minlength="8" autocomplete="new-password" required>
+      <label for="clave-2">Repite la contraseña</label>
+      <input id="clave-2" type="password" minlength="8" autocomplete="new-password" required>
+      <div class="error-txt" id="clave-error"></div>
+      <button class="primary" type="submit" id="btn-clave">Guardar contraseña</button>
+      <button type="button" class="ghost" id="btn-clave-salir" style="width:100%;margin-top:8px">${obligatorio ? "Salir" : "Cancelar"}</button>
+    </form>`);
+  $("#clave-1").focus();
+  $("#btn-clave-salir").onclick = () => (obligatorio ? sb.auth.signOut() : router());
+  $("#form-clave").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const c1 = $("#clave-1").value, c2 = $("#clave-2").value, err = $("#clave-error");
+    if (c1.length < 8) { err.textContent = "La contraseña debe tener al menos 8 caracteres."; return; }
+    if (c1 !== c2) { err.textContent = "Las contraseñas no coinciden."; return; }
+    $("#btn-clave").disabled = true;
+    const { error } = await sb.auth.updateUser({ password: c1 });
+    if (!error && H.perfil.debe_cambiar_clave) {
+      const r = await sb.rpc("clave_cambiada");
+      if (r.error) { err.textContent = msgError(r.error); $("#btn-clave").disabled = false; return; }
+    }
+    $("#btn-clave").disabled = false;
+    if (error) { err.textContent = msgError(error); return; }
+    H.perfil.debe_cambiar_clave = false;
+    aviso("Contraseña cambiada.");
+    router();
+  };
+}
+$("#btn-mi-clave").addEventListener("click", () => pantallaClave(false));
 
 // ---------- Sesión ----------
 async function cargarPerfil() {
