@@ -1401,6 +1401,33 @@ end $$;
 revoke execute on function cambiar_mi_nombre(text) from anon, public;
 grant  execute on function cambiar_mi_nombre(text) to authenticated;
 
+-- Mi foto de perfil: bucket privado "avatares", cada usuario en su carpeta <usuario>/<archivo>
+alter table perfiles add column if not exists foto text;
+create or replace function cambiar_mi_foto(p_ruta text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Inicia sesión' using errcode = '42501'; end if;
+  if p_ruta is not null and split_part(p_ruta, '/', 1) <> auth.uid()::text then
+    raise exception 'Esa foto no es tuya' using errcode = '42501';
+  end if;
+  update perfiles set foto = p_ruta where id = auth.uid();
+end $$;
+revoke execute on function cambiar_mi_foto(text) from anon, public;
+grant  execute on function cambiar_mi_foto(text) to authenticated;
+
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('avatares', 'avatares', false, 5242880)
+on conflict (id) do nothing;
+drop policy if exists "horus_avatar_leer"   on storage.objects;
+drop policy if exists "horus_avatar_subir"  on storage.objects;
+drop policy if exists "horus_avatar_borrar" on storage.objects;
+create policy "horus_avatar_leer"   on storage.objects for select to authenticated
+  using (bucket_id = 'avatares' and ((storage.foldername(name))[1] = auth.uid()::text or es_admin()));
+create policy "horus_avatar_subir"  on storage.objects for insert to authenticated
+  with check (bucket_id = 'avatares' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "horus_avatar_borrar" on storage.objects for delete to authenticated
+  using (bucket_id = 'avatares' and ((storage.foldername(name))[1] = auth.uid()::text or es_admin()));
+
 -- =====================================================================
 -- ============ INTEGRIDAD: EMPRESAS, AUTORES Y TIPOS DE ARCHIVO ============
 -- =====================================================================
@@ -1478,6 +1505,7 @@ end $$;
 
 -- Los buckets solo aceptan fotos y videos (nada de páginas web u otros archivos)
 update storage.buckets set allowed_mime_types = array['image/*', 'video/*'] where id in ('equipos', 'ordenes', 'servicios');
+update storage.buckets set allowed_mime_types = array['image/*'] where id = 'avatares';
 
 revoke all on function ruta_registrada(text) from public, anon;
 grant execute on function ruta_registrada(text) to authenticated;

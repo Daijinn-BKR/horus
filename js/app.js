@@ -15,6 +15,7 @@ import * as pendientes from "./pendientes.js";
 import * as sanitizacion from "./sanitizacion.js";
 import * as admin from "./admin.js";
 import { renderPublico } from "./publico.js";
+import { subirMedios } from "./medios.js";
 
 // ---------- Rutas ----------
 // modulo: requiere ese módulo activo · acceso: "staff" | "jefe" | "admin" (por defecto: cualquier usuario con módulo)
@@ -119,6 +120,7 @@ function pintarNav() {
   const p = H.perfil;
   const donde = esAdmin() ? "" : esCliente() ? H.cliente?.nombre : H.empresa?.nombre;
   $("#quien").innerHTML = `<button type="button" class="link-nombre" id="btn-mi-nombre" title="Cambiar mi nombre">${esc(p.nombre || p.email)} ✎</button><br>${esc(nombreRol(p.rol, H.empresa?.id))}${donde ? " · " + esc(donde) : ""}`;
+  pintarFoto();
   document.documentElement.style.setProperty("--accent", H.empresa?.color || "");
   if (!H.empresa?.color) document.documentElement.style.removeProperty("--accent");
 }
@@ -156,6 +158,34 @@ $("#empresas-app").addEventListener("click", (ev) => {
   const sigue = Object.values(MODULOS).some((m) => m.ruta === actual) && moduloActivo(Object.keys(MODULOS).find((k) => MODULOS[k].ruta === actual));
   const destino = actual.startsWith("#/admin") ? location.hash : sigue ? actual : primero ? MODULOS[primero].ruta : "#/admin";
   if (location.hash === destino) router(); else location.hash = destino;
+});
+
+// Foto de perfil (bucket privado: URL firmada, guardada mientras no cambie la foto)
+let fotoUrl = { ruta: null, url: null };
+async function pintarFoto() {
+  const b = $("#btn-mi-foto"), p = H.perfil;
+  const inicial = esc((p.nombre || p.email || "?").trim()[0].toUpperCase());
+  if (!p.foto) { b.innerHTML = inicial; return; }
+  if (fotoUrl.ruta !== p.foto) {
+    const { data } = await sb.storage.from("avatares").createSignedUrl(p.foto, 3600 * 12);
+    fotoUrl = { ruta: p.foto, url: data?.signedUrl || null };
+  }
+  b.innerHTML = fotoUrl.url ? `<img src="${esc(fotoUrl.url)}" alt="">` : inicial;
+}
+$("#btn-mi-foto").addEventListener("click", () => $("#in-mi-foto").click());
+$("#in-mi-foto").addEventListener("change", async (ev) => {
+  const f = ev.target.files[0];
+  ev.target.value = "";
+  if (!f) return;
+  const anterior = H.perfil.foto;
+  let nueva = null;
+  const ok = await subirMedios({ bucket: "avatares", carpeta: H.usuario.id, files: [f], tipo: "foto",
+    registrar: async (ruta) => { nueva = ruta; return sb.rpc("cambiar_mi_foto", { p_ruta: ruta }); } });
+  if (!ok) return;
+  if (anterior) await sb.storage.from("avatares").remove([anterior]);
+  H.perfil.foto = nueva;
+  pintarFoto();
+  aviso("Foto de perfil actualizada.");
 });
 
 // Cada usuario cambia su propio nombre (la base de datos solo deja tocar el nombre de quien tiene la sesión)
