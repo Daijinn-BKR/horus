@@ -1672,7 +1672,8 @@ create trigger servicio_seap before insert or update or delete on servicios
   for each row execute function servicio_seap();
 
 -- =====================================================================
---  RUT Clientes: subir facturas (PDF). La app lee cada factura y agrega sus datos aquí al instante.
+--  RUT Clientes: subir facturas (PDF). La app lee cada factura y agrega solo sus datos aquí, al instante
+--  (el PDF no se guarda).
 --  Cliente nuevo → se crea; cliente existente → se le suma la factura (si no la tenía ya).
 -- =====================================================================
 -- p_items: [{ rut, nombre, direccion, comuna, ciudad, factura: "archivo.pdf (fecha, $total)" }]
@@ -1711,17 +1712,5 @@ begin
 end $$;
 revoke execute on function agregar_facturas(jsonb) from anon, public;
 grant  execute on function agregar_facturas(jsonb) to authenticated;
-
--- Los PDF de las facturas subidas: bucket privado, solo admin. Ruta: <rut>/<archivo sin tildes>.pdf
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('facturas', 'facturas', false, 10485760, array['application/pdf'])
-on conflict (id) do nothing;
-update storage.buckets set allowed_mime_types = array['application/pdf'] where id = 'facturas';
-drop policy if exists "horus_fact_leer"   on storage.objects;
-drop policy if exists "horus_fact_subir"  on storage.objects;
-drop policy if exists "horus_fact_borrar" on storage.objects;
-create policy "horus_fact_leer"   on storage.objects for select to authenticated using (bucket_id = 'facturas' and es_admin());
-create policy "horus_fact_subir"  on storage.objects for insert to authenticated with check (bucket_id = 'facturas' and es_admin());
-create policy "horus_fact_borrar" on storage.objects for delete to authenticated using (bucket_id = 'facturas' and es_admin());
 
 notify pgrst, 'reload schema';
