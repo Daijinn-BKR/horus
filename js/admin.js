@@ -1,6 +1,6 @@
 // Horus · Administración (solo rol admin)
 import {
-  sb, H, MODULOS, ROLES, ROLES_EMPRESA, PERMISOS, $, $$, esc, aviso, msgError, vista, cargando, fmtHora,
+  sb, H, MODULOS, ROLES, ROLES_EMPRESA, PERMISOS, $, $$, esc, aviso, msgError, vista, cargando, fmtHora, fecha,
   clientesEmpresa, olvidarClientes, normalizarRut, normalizarTelefono, validarCampo, msgCarga, nf,
 } from "./nucleo.js";
 import { leerArchivo, separarEncabezado, normal } from "./excel.js";
@@ -340,6 +340,19 @@ function leerCSV(texto) {
   return filas.filter((f) => f.some((x) => x.trim()));
 }
 const soloDigitos = (t) => String(t ?? "").replace(/[^0-9kK]/g, "").toLowerCase();
+// Ciudades y comunas escritas de distintas formas en las facturas (STGO, PTO.MONTT, PUERTO MONTTT…)
+const LUGARES = { STGO: "SANTIAGO", "P MONTT": "PUERTO MONTT", "PTO MONTT": "PUERTO MONTT", "PUERTO MONNT": "PUERTO MONTT",
+  "PUERTO MONTTT": "PUERTO MONTT", "PUERTRO MONTT": "PUERTO MONTT", "PTO VARAS": "PUERTO VARAS",
+  "SN J DE LA CO": "SAN JUAN DE LA COSTA", "SAN JUAN DE LA COS": "SAN JUAN DE LA COSTA" };
+const lugar = (t) => { const x = String(t ?? "").toUpperCase().replace(/\./g, " ").replace(/\s+/g, " ").trim(); return LUGARES[x] || x || null; };
+// "Factura 12 - X.pdf (07 de Abril del 2019, $404.600)" → { nombre, fecha (aaaa-mm-dd), monto }
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+function partirFactura(t) {
+  const m = String(t).match(/^(.*?) \((\d{1,2}) de (\p{L}+) del (\d{4}), \$([\d.]+)\)$/u);
+  const mes = m ? MESES.indexOf(m[3].toLowerCase()) + 1 : 0;
+  if (!mes) return { nombre: String(t), fecha: null, monto: null };
+  return { nombre: m[1], fecha: `${m[4]}-${String(mes).padStart(2, "0")}-${m[2].padStart(2, "0")}`, monto: Number(m[5].replace(/\./g, "")) };
+}
 async function rutClientes() {
   cargando();
   // Sin la columna facturas (pesa ~90% de la tabla): se piden al hacer clic en el RUT
@@ -350,7 +363,7 @@ async function rutClientes() {
     <p class="muted small" id="rc-conteo"></p>
     <div id="rc-res"></div>
     <dialog id="rc-dlg"><h2 id="rc-dlg-t"></h2><p class="muted small" id="rc-dlg-s"></p>
-      <ul id="rc-dlg-l" style="max-height:55vh;overflow:auto;margin:8px 0 0;padding-left:20px"></ul>
+      <div id="rc-dlg-l" class="tabla-wrap" style="max-height:55vh;overflow:auto;margin-top:8px"></div>
       <div class="pie"><button type="button" id="rc-dlg-x">Cerrar</button></div></dialog>`, true);
   if (error) return ($("#rc-res", v).innerHTML = `<p class="vacio">${esc(msgCarga(error, "rut_clientes"))}</p>`);
 
@@ -368,9 +381,10 @@ async function rutClientes() {
     </table></div>` : `<p class="vacio">${data.length ? "Sin resultados." : "Todavía no hay datos. Usa “Cargar CSV”."}</p>`;
     vistos = l;
   };
-  // Clic en un RUT: mini menú con sus facturas asociadas (orden numérico: Factura 2 antes que Factura 10)
+  // Clic en un RUT: mini menú con sus facturas asociadas, de la más nueva a la más antigua
   let vistos = [];
   const orden = new Intl.Collator("es", { numeric: true }), dlg = $("#rc-dlg", v);
+  const pesos = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP" });
   $("#rc-res", v).onclick = async (ev) => {
     const b = ev.target.closest("[data-i]");
     if (!b) return;
@@ -379,10 +393,16 @@ async function rutClientes() {
     const { data: r, error: e } = await sb.from("rut_clientes").select("facturas").eq("rut", c.rut).maybeSingle();
     b.disabled = false;
     if (e) return aviso(msgError(e), true);
-    const f = [...(r?.facturas || [])].sort(orden.compare);
+    const f = (r?.facturas || []).map(partirFactura)
+      .sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "") || orden.compare(a.nombre, b.nombre));
+    const total = f.reduce((s, x) => s + (x.monto || 0), 0);
     $("#rc-dlg-t").textContent = c.nombre;
-    $("#rc-dlg-s").textContent = `${c.rut} · ${nf.format(f.length)} factura${f.length === 1 ? "" : "s"} asociada${f.length === 1 ? "" : "s"}`;
-    $("#rc-dlg-l").innerHTML = f.length ? f.map((x) => `<li>${esc(x)}</li>`).join("") : `<li class="muted">Sin facturas asociadas.</li>`;
+    $("#rc-dlg-s").textContent = `${c.rut} · ${nf.format(f.length)} factura${f.length === 1 ? "" : "s"} asociada${f.length === 1 ? "" : "s"}`
+      + (total ? ` · total ${pesos.format(total)}` : "");
+    $("#rc-dlg-l").innerHTML = f.length ? `<table class="tabla"><thead><tr><th>Factura</th><th>Fecha</th><th style="text-align:right">Monto</th></tr></thead>
+      <tbody>${f.map((x) => `<tr><td>${esc(x.nombre)}</td><td style="white-space:nowrap">${x.fecha ? fecha(x.fecha) : ""}</td>
+        <td style="text-align:right;white-space:nowrap">${x.monto != null ? pesos.format(x.monto) : ""}</td></tr>`).join("")}</tbody></table>`
+      : `<p class="muted">Sin facturas asociadas.</p>`;
     dlg.showModal();
   };
   $("#rc-dlg-x", v).onclick = () => dlg.close();
@@ -405,8 +425,13 @@ async function rutClientes() {
       if (idx.rut < 0 || idx.nombre < 0) throw new Error("El archivo debe tener las columnas rut y nombre.");
       const items = datos.map((fila) => Object.fromEntries(Object.entries(idx).map(([k, i]) => [k, i < 0 || fila[i] == null ? null : String(fila[i]).trim()])))
         .filter((x) => x.rut && x.nombre)
-        // facturas: la columna "archivo" más "facturas_asociadas" (separadas por " | ")
-        .map(({ archivo, facturas_asociadas, ...x }) => ({ ...x, facturas: [archivo, ...String(facturas_asociadas || "").split("|")].map((t) => (t || "").trim()).filter(Boolean) }));
+        // facturas: "facturas_asociadas" (separadas por " | ") y la columna "archivo" solo si no viene ya ahí con su fecha y monto
+        .map(({ archivo, facturas_asociadas, ...x }) => {
+          const fs = String(facturas_asociadas || "").split("|").map((t) => t.trim()).filter(Boolean);
+          if (archivo && !fs.some((t) => t === archivo || t.startsWith(archivo + " ("))) fs.unshift(archivo);
+          const comuna = lugar(x.comuna), ciudad = lugar(x.ciudad);
+          return { ...x, comuna, ciudad: ciudad && ciudad !== "PUERTO" ? ciudad : comuna, facturas: fs };
+        });
       if (!confirm(`¿Reemplazar la lista actual (${nf.format(data.length)}) por ${nf.format(items.length)} clientes de “${f.name}”?`)) return;
       const { data: n, error: e } = await sb.rpc("cargar_rut_clientes", { p_items: items });
       if (e) return aviso(msgError(e), true);

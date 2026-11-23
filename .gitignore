@@ -18,3 +18,6 @@ receptores.csv
 
 # Configuración del ESP32 (WiFi y clave del módulo): se copia desde config.example.h
 sala-bombas/firmware/**/config.h
+
+# Grafo de conocimiento (graphify), solo local
+graphify-out/
