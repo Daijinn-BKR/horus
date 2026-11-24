@@ -42,8 +42,13 @@ jobs:
           grep -q "TU-PROYECTO\|TU-CLAVE" _site/js/config.js && { echo "config.js no quedó completo"; exit 1; } || true
 
       - uses: actions/configure-pages@v5
+      # Nombre distinto en cada intento: si se usa "Re-run", no quedan dos copias con el mismo nombre
+      # (deploy-pages falla con "Multiple artifacts named github-pages")
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+          name: github-pages-${{ github.run_attempt }}
       - id: deploy
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
