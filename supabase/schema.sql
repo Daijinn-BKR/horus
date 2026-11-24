@@ -1564,12 +1564,13 @@ begin
   if coalesce(cardinality(p_personal), 0) = 0 then raise exception 'Selecciona al menos una persona'; end if;
   if v_id is null then
     insert into servicios (empresa_id, cliente_id, fecha, tipos, otros_detalle, observaciones, iv, visitas, visita, serie_id,
-                           sanitizacion_id, estanques)
+                           sanitizacion_id, estanques, csi)
     values (p_datos->>'empresa_id', (p_datos->>'cliente_id')::uuid, (p_datos->>'fecha')::date, v_tipos,
             nullif(trim(coalesce(p_datos->>'otros_detalle', '')), ''), nullif(trim(coalesce(p_datos->>'observaciones', '')), ''),
             nullif(trim(coalesce(p_datos->>'iv', '')), ''), coalesce((p_datos->>'visitas')::int, 1),
             coalesce((p_datos->>'visita')::int, 1), nullif(p_datos->>'serie_id', '')::uuid,
-            nullif(p_datos->>'sanitizacion_id', '')::uuid, nullif(p_datos->>'estanques', '')::int)
+            nullif(p_datos->>'sanitizacion_id', '')::uuid, nullif(p_datos->>'estanques', '')::int,
+            nullif(trim(coalesce(p_datos->>'csi', '')), ''))
     returning id into v_id;
   else
     update servicios set
@@ -1577,7 +1578,8 @@ begin
       otros_detalle = nullif(trim(coalesce(p_datos->>'otros_detalle', '')), ''),
       observaciones = nullif(trim(coalesce(p_datos->>'observaciones', '')), ''),
       iv = nullif(trim(coalesce(p_datos->>'iv', '')), ''), visitas = coalesce((p_datos->>'visitas')::int, visitas),
-      sanitizacion_id = nullif(p_datos->>'sanitizacion_id', '')::uuid, estanques = nullif(p_datos->>'estanques', '')::int
+      sanitizacion_id = nullif(p_datos->>'sanitizacion_id', '')::uuid, estanques = nullif(p_datos->>'estanques', '')::int,
+      csi = nullif(trim(coalesce(p_datos->>'csi', '')), '')
     where id = v_id;
     if not found then raise exception 'No se encontró el servicio'; end if;
     delete from servicio_personal where servicio_id = v_id and personal_id <> all(p_personal);
@@ -1764,5 +1766,61 @@ begin
 end $$;
 revoke execute on function cliente_desde_rut(text, text) from anon, public;
 grant  execute on function cliente_desde_rut(text, text) to authenticated;
+
+-- =====================================================================
+--  Servicios: CSI (5 números). Se entrega con la última visita del servicio (visita N de N), junto con su IV.
+-- =====================================================================
+alter table servicios add column if not exists csi text;
+alter table servicios drop constraint if exists servicios_csi_valido;
+alter table servicios add constraint servicios_csi_valido check (csi is null or (csi ~ '^[0-9]{5}$' and visita = visitas));
+
+-- =====================================================================
+--  Calendario de visitas (clientes frecuentes). Ej.: Santo Tomás, desratización cada 2 meses.
+--  La próxima visita se calcula desde el último servicio de ese tipo al cliente (nunca antes de "inicio").
+--  El supervisor (jefe) o admin crea y edita los planes; todo el personal los ve. Solo admin borra.
+-- =====================================================================
+create table if not exists planes_visita (
+  id          uuid primary key default gen_random_uuid(),
+  empresa_id  text not null references empresas(id),
+  cliente_id  uuid not null references clientes(id),
+  tipo        text not null check (length(trim(tipo)) > 0),      -- tipo de servicio (ej. Desratización)
+  cada        integer not null check (cada between 1 and 104),
+  unidad      text not null default 'meses' check (unidad in ('semanas','meses')),
+  inicio      date not null default current_date,                -- primera visita del plan
+  notas       text,
+  activo      boolean not null default true,
+  creado_por  uuid default auth.uid() references perfiles(id) on delete set null,
+  creado_en   timestamptz not null default now()
+);
+create index if not exists planes_visita_idx on planes_visita (empresa_id, cliente_id);
+
+drop trigger if exists cliente_empresa on planes_visita;
+create trigger cliente_empresa before insert or update on planes_visita for each row execute function cliente_de_la_empresa();
+drop trigger if exists fijar_autor on planes_visita;
+create trigger fijar_autor before insert or update on planes_visita for each row execute function fijar_autor('creado_por', '');
+call horus_auditar(array['planes_visita']);
+call horus_preparar_rls(array['planes_visita']);
+create policy "planes_ver"    on planes_visita for select to authenticated using (es_staff(empresa_id));
+create policy "planes_crear"  on planes_visita for insert to authenticated with check (es_jefe(empresa_id));
+create policy "planes_editar" on planes_visita for update to authenticated using (es_jefe(empresa_id)) with check (es_jefe(empresa_id));
+create policy "planes_borrar" on planes_visita for delete to authenticated using (es_admin());
+
+-- Planes con su última visita y la próxima (respeta los permisos de quien consulta)
+create or replace function proximas_visitas(p_empresa text)
+returns table (id uuid, cliente_id uuid, cliente text, tipo text, cada integer, unidad text, inicio date, notas text,
+               activo boolean, ultima date, proxima date)
+language sql stable set search_path = public as $$
+  select p.id, p.cliente_id, c.nombre, p.tipo, p.cada, p.unidad, p.inicio, p.notas, p.activo, u.ultima,
+         greatest((u.ultima + case p.unidad when 'semanas' then make_interval(weeks => p.cada)
+                                            else make_interval(months => p.cada) end)::date, p.inicio)
+    from planes_visita p
+    join clientes c on c.id = p.cliente_id
+    left join lateral (select max(s.fecha) as ultima from servicios s
+                        where s.cliente_id = p.cliente_id and p.tipo = any(s.tipos)) u on true
+   where p.empresa_id = p_empresa
+   order by 11, 3;
+$$;
+revoke execute on function proximas_visitas(text) from anon, public;
+grant  execute on function proximas_visitas(text) to authenticated;
 
 notify pgrst, 'reload schema';

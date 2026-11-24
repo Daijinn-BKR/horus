@@ -314,5 +314,37 @@ do $$ declare v uuid; w uuid; begin
 end $$;
 reset role;
 
+-- ---------- CSI y calendario de visitas ----------
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', true);  -- operario de Lafken
+set local role authenticated;
+do $$ declare ok boolean := false; begin
+  begin
+    perform srv_guardar(null, '{"empresa_id":"lafken","cliente_id":"00000000-0000-0000-0000-0000000000c3","fecha":"2026-03-01",
+      "tipos":["Desratización"],"iv":"7777","visitas":2,"visita":1,"csi":"12345"}', array['00000000-0000-0000-0000-0000000000e1']::uuid[]);
+  exception when check_violation then ok := true; end;
+  if not ok then raise exception 'FALLA: se guardó un CSI en una visita que no es la última'; end if;
+  perform srv_guardar(null, '{"empresa_id":"lafken","cliente_id":"00000000-0000-0000-0000-0000000000c3","fecha":"2026-03-01",
+    "tipos":["Desratización"],"iv":"7777","visitas":1,"csi":"12345"}', array['00000000-0000-0000-0000-0000000000e1']::uuid[]);
+  ok := false;
+  begin insert into planes_visita (empresa_id, cliente_id, tipo, cada) values ('lafken', '00000000-0000-0000-0000-0000000000c3', 'Desratización', 2);
+  exception when insufficient_privilege then ok := true; end;
+  if not ok then raise exception 'FALLA: un operario creó un plan de visitas'; end if;
+  raise notice 'OK: CSI solo en la última visita; el operario no crea planes';
+end $$;
+reset role;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', true);  -- admin
+set local role authenticated;
+do $$ declare p date; begin
+  insert into planes_visita (empresa_id, cliente_id, tipo, cada, inicio)
+  values ('lafken', '00000000-0000-0000-0000-0000000000c3', 'Desratización', 2, '2026-01-01'),
+         ('lafken', '00000000-0000-0000-0000-0000000000c3', 'Desinsectación', 3, '2026-07-01');
+  p := (select proxima from proximas_visitas('lafken') where tipo = 'Desratización');
+  if p <> '2026-05-01' then raise exception 'FALLA: próxima desratización % (esperado 2026-05-01: último servicio 1-mar + 2 meses)', p; end if;
+  p := (select proxima from proximas_visitas('lafken') where tipo = 'Desinsectación');
+  if p <> '2026-07-01' then raise exception 'FALLA: sin servicios previos la próxima debe ser el inicio, fue %', p; end if;
+  raise notice 'OK: calendario calcula la próxima visita';
+end $$;
+reset role;
+
 rollback;
 \echo 'Todas las pruebas pasaron.'

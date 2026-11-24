@@ -4,6 +4,7 @@ import {
   clientesEmpresa, campoCliente, activarCampoCliente, clienteElegido, opcionesServicio, esAdmin, esCliente,
 } from "./nucleo.js";
 import { subirMedios } from "./medios.js";
+import { olvidarAvisos } from "./calendario.js";
 
 export const rutas = [
   { patron: /^#\/servicios$/, modulo: "servicios", render: () => (esCliente() ? listaCliente() : lista()) },
@@ -26,6 +27,7 @@ async function lista() {
   vista(`
     <div class="acciones">
       <a class="btn primary" href="#/servicios/nuevo">+ Nuevo servicio</a>
+      <a class="btn" href="#/servicios/calendario">Calendario</a>
       <button id="btn-csv">Exportar CSV</button>
     </div>
     <div class="panel filtros">
@@ -64,7 +66,7 @@ async function lista() {
     $("#lista").innerHTML = data.length ? data.map((s) => `
       <div class="tarjeta">
         <div class="t-top">
-          <div><strong>${esc(s.clientes?.nombre)}</strong><div class="muted small">${fecha(s.fecha)}${s.iv ? " · IV " + esc(s.iv) : ""}${s.visitas > 1 ? " · " + visitaTxt(s) : ""}</div></div>
+          <div><strong>${esc(s.clientes?.nombre)}</strong><div class="muted small">${fecha(s.fecha)}${s.iv ? " · IV " + esc(s.iv) : ""}${s.csi ? " · CSI " + esc(s.csi) : ""}${s.visitas > 1 ? " · " + visitaTxt(s) : ""}</div></div>
           <div class="acciones" style="margin:0">
             <a class="btn chico" href="#/servicios/${s.id}/editar">Editar</a>
             ${s.visita < s.visitas && !hechas.has(serie(s) + ":" + (s.visita + 1))
@@ -89,8 +91,8 @@ async function lista() {
   };
   ["#h-cli", "#h-tipo", "#h-desde", "#h-hasta"].forEach((s) => ($(s).onchange = cargar));
   $("#btn-csv").onclick = () => descargarCSV("servicios",
-    ["Fecha", "IV", "Visita", "Cliente", "Tipos", "Otros", "Personal", "Observaciones"],
-    datos.map((s) => [s.fecha, s.iv, `${s.visita} de ${s.visitas}`, s.clientes?.nombre, s.tipos, s.otros_detalle, s.servicio_personal.map((x) => x.personal?.nombre), s.observaciones]));
+    ["Fecha", "IV", "CSI", "Visita", "Cliente", "Tipos", "Otros", "Personal", "Observaciones"],
+    datos.map((s) => [s.fecha, s.iv, s.csi, `${s.visita} de ${s.visitas}`, s.clientes?.nombre, s.tipos, s.otros_detalle, s.servicio_personal.map((x) => x.personal?.nombre), s.observaciones]));
   cargar();
 }
 
@@ -104,7 +106,7 @@ async function formulario(id, desde = null) {
     if (error || !data) { vista(`<a href="#/servicios" class="volver">← Servicios</a><p class="vacio">No se encontró el servicio.</p>`); return; }
     s = { ...data, ops: data.servicio_personal.map((x) => x.personal_id) };
     // Siguiente visita: mismo cliente, servicio y personal; IV, fecha, foto y observaciones nuevos
-    if (desde) s = { ...s, id: undefined, fecha: hoy(), iv: "", observaciones: "", foto: null, estanques: null, visita: data.visita + 1, serie_id: serie(data) };
+    if (desde) s = { ...s, id: undefined, fecha: hoy(), iv: "", csi: "", observaciones: "", foto: null, estanques: null, visita: data.visita + 1, serie_id: serie(data) };
   }
   const [clientes, pers, coord] = await Promise.all([
     clientesEmpresa(),
@@ -142,6 +144,8 @@ async function formulario(id, desde = null) {
         <div><label for="f-fecha" class="req">Fecha</label><input id="f-fecha" type="date" value="${s.fecha}"></div>
         <div><label for="f-iv" class="req">IV (informe de visita)</label><input id="f-iv" inputmode="numeric" pattern="[0-9]{4,}" placeholder="Mínimo 4 números" value="${esc(s.iv || "")}"></div>
         <div><label for="f-visitas" class="req">Número de visitas</label><input id="f-visitas" type="number" inputmode="numeric" min="${s.visita}" step="1" value="${s.visitas}"></div>
+        <div id="csi-box" ${s.visita === s.visitas ? "" : "hidden"}><label for="f-csi" class="req">CSI (última visita)</label>
+          <input id="f-csi" inputmode="numeric" maxlength="5" pattern="[0-9]{5}" placeholder="5 números" value="${esc(s.csi || "")}"></div>
         <div><label>Esta visita</label><p style="margin:8px 0">${s.visita}${s.visita > 1 ? ` <span class="muted small">(${ORDINAL[s.visita] || "siguiente"} visita)</span>` : ""}</p></div>
       </div>
       <label class="req">Personal</label>
@@ -157,8 +161,11 @@ async function formulario(id, desde = null) {
         <label for="f-otros" class="req">Especifica "Otros"</label><input id="f-otros" value="${esc(s.otros_detalle)}">
       </div>
       <label for="f-obs">Observaciones</label><textarea id="f-obs">${esc(s.observaciones)}</textarea>
-      <label for="f-foto">Foto${s.foto ? " (ya tiene una; elige otra para reemplazarla)" : ""}</label>
-      <input id="f-foto" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif">
+      <label>Foto${s.foto ? " (ya tiene una; elige otra para reemplazarla)" : ""}</label>
+      <div class="acciones" style="margin:0;align-items:center">
+        <label class="btn subir">Tomar foto<input type="file" id="f-foto-cam" accept="image/*" capture="environment"></label>
+        <label class="btn subir">Elegir de la galería<input type="file" id="f-foto" accept="image/*"></label>
+        <span class="muted small" id="f-foto-nombre"></span></div>
       <div class="guardar"><a class="btn" href="#/servicios">Cancelar</a>
         <button class="primary" type="submit" id="btn-guardar">${id ? "Guardar cambios" : "Guardar servicio"}</button></div>
     </form>`);
@@ -172,6 +179,15 @@ async function formulario(id, desde = null) {
   // Con SEAP marcado, la búsqueda es solo entre los clientes con una sanitización coordinada
   activarCampoCliente($("#f-cliente", v), { local: () => (seapMarcado() ? clientes.filter((c) => coordinados.has(c.id)) : null) });
   $("#f-cliente", v).onchange = pintarSan;
+  // CSI: se entrega con la última visita (visita N de N)
+  $("#f-visitas", v).oninput = () => { $("#csi-box").hidden = Number($("#f-visitas").value) !== s.visita; };
+  // Foto: de la cámara o de la galería (la última que se elija)
+  let foto = null;
+  for (const id of ["#f-foto-cam", "#f-foto"]) $(id, v).onchange = (ev) => {
+    foto = ev.target.files[0] || foto;
+    ev.target.value = "";
+    $("#f-foto-nombre").textContent = foto ? "✓ " + foto.name : "";
+  };
   $("#f-tipos", v).onchange = () => {
     const marcados = $$("#f-tipos input:checked").map((i) => i.value), seap = marcados.includes("SEAP");
     $("#otros-box").hidden = !marcados.includes("Otros");
@@ -198,12 +214,14 @@ async function formulario(id, desde = null) {
     const iv = $("#f-iv").value.trim(), visitas = Number($("#f-visitas").value);
     if (!/^[0-9]{4,}$/.test(iv)) { $("#f-iv").focus(); return aviso("El IV debe tener al menos 4 números (solo números).", true); }
     if (!Number.isInteger(visitas) || visitas < s.visita) return aviso(`El número de visitas debe ser ${s.visita} o más.`, true);
+    const ultima = visitas === s.visita, csi = ultima ? $("#f-csi").value.trim() : null;
+    if (ultima && !/^[0-9]{5}$/.test(csi)) { $("#f-csi").focus(); return aviso("En la última visita va el CSI: 5 números.", true); }
     const seap = tiposSel.includes("SEAP");
     const sanitizacion_id = seap ? $("#f-san").value : null, estanques = seap ? Number($("#f-estanques").value) : null;
     if (seap && !sanitizacion_id) return aviso("SEAP: el cliente no tiene una sanitización coordinada.", true);
     if (seap && !(Number.isInteger(estanques) && estanques >= 1)) { $("#f-estanques").focus(); return aviso("Indica cuántos estanques se sanitizaron.", true); }
     const fila = { cliente_id, fecha: fechaS, tipos: tiposSel, otros_detalle: otros, observaciones: $("#f-obs").value.trim() || null, iv, visitas,
-      sanitizacion_id, estanques };
+      sanitizacion_id, estanques, csi };
     if (!id) Object.assign(fila, { empresa_id: H.empresa.id, visita: s.visita, serie_id: s.serie_id });
     const btn = $("#btn-guardar");
     btn.disabled = true;
@@ -211,7 +229,7 @@ async function formulario(id, desde = null) {
     const r = await sb.rpc("srv_guardar", { p_id: id || null, p_datos: fila, p_personal: ops });
     if (r.error) { btn.disabled = false; return aviso("Error al guardar: " + msgError(r.error), true); }
     const sid = r.data;
-    const foto = $("#f-foto").files[0];
+    olvidarAvisos(); // la próxima visita del calendario puede haber cambiado
     if (foto) {
       const ok = await subirMedios({ bucket: "servicios", carpeta: H.empresa.id, files: [foto], tipo: "foto",
         registrar: (ruta) => sb.from("servicios").update({ foto: ruta }).eq("id", sid) });

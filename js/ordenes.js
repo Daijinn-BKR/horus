@@ -144,8 +144,9 @@ async function ficha(id) {
     <div class="panel"><h2>Fotos y videos</h2>
       <div id="ot-fotos" class="galeria"></div><div id="ot-videos" class="videos"></div>
       ${puedeSubir ? `<div class="acciones" style="margin:0">
-        <label class="btn subir">+ Agregar fotos<input type="file" id="ot-in-fotos" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif" multiple></label>
-        <label class="btn subir">+ Agregar videos<input type="file" id="ot-in-videos" accept="video/mp4,video/quicktime,video/webm,video/3gpp,video/x-matroska,video/x-msvideo" multiple></label></div>
+        <label class="btn subir">+ Agregar fotos<input type="file" id="ot-in-fotos" accept="image/*" multiple></label>
+        <label class="btn subir">Tomar foto<input type="file" id="ot-in-foto-cam" accept="image/*" capture="environment"></label>
+        <label class="btn subir">+ Agregar videos<input type="file" id="ot-in-videos" accept="video/*" multiple></label></div>
         <p class="muted small" style="margin:8px 0 0">Máximo 50 MB por video.</p>` : ""}
     </div>
 
@@ -169,7 +170,7 @@ async function ficha(id) {
       <h2>Marcar como terminado</h2>
       <label for="t-inf" class="req">¿Qué trabajo se realizó?</label><textarea id="t-inf" rows="5" required>${esc(o.informe || "")}</textarea>
       <label for="t-mat">Materiales usados</label><textarea id="t-mat" rows="2">${esc(o.materiales || "")}</textarea>
-      <label for="t-arch">Fotos o videos del trabajo</label><input type="file" id="t-arch" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,video/mp4,video/quicktime,video/webm,video/3gpp,video/x-matroska,video/x-msvideo" multiple>
+      <label for="t-arch">Fotos o videos del trabajo</label><input type="file" id="t-arch" accept="image/*,video/*" multiple>
       <p class="muted small">Quedará esperando la verificación del jefe eléctrico.</p>
       <div class="pie"><button type="button" data-cerrar>Cancelar</button><button class="primary" type="submit">Terminar</button></div>
     </form></dialog>
@@ -189,7 +190,7 @@ async function ficha(id) {
   $$("[data-cerrar]", v).forEach((b) => (b.onclick = () => b.closest("dialog").close()));
   $("#ot-iniciar", v) && ($("#ot-iniciar", v).onclick = () => rpc("ot_iniciar", { p_orden: id }, "Orden iniciada."));
   $("#ot-terminar", v) && ($("#ot-terminar", v).onclick = () => $("#dlg-term").showModal());
-  $("#ot-in-fotos", v) && ($("#ot-in-fotos", v).onchange = (ev) => subirArchivos(o, ev.target.files, "foto").then(() => cargarMedios(o)));
+  $("#ot-in-fotos", v) && ($("#ot-in-fotos", v).onchange = $("#ot-in-foto-cam", v).onchange = (ev) => subirArchivos(o, ev.target.files, "foto").then(() => cargarMedios(o)));
   $("#ot-in-videos", v) && ($("#ot-in-videos", v).onchange = (ev) => subirArchivos(o, ev.target.files, "video").then(() => cargarMedios(o)));
   cargarMedios(o);
   $("#form-term", v).onsubmit = async (ev) => {

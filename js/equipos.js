@@ -170,9 +170,10 @@ async function ficha(id, refresco = false) {
     <div class="panel"><h2>Proceso y notas</h2><dl class="datos">${CIERRE.map((c) => filaDato(c, e)).join("")}</dl></div>
 
     <div class="panel"><h2>Fotos</h2><div id="fotos" class="galeria"></div>
-      <label class="btn subir">+ Agregar fotos<input type="file" id="in-fotos" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif" multiple></label></div>
+      <label class="btn subir">+ Agregar fotos<input type="file" id="in-fotos" accept="image/*" multiple></label>
+      <label class="btn subir">Tomar foto<input type="file" id="in-foto-cam" accept="image/*" capture="environment"></label></div>
     <div class="panel"><h2>Videos</h2><div id="videos" class="videos"></div>
-      <label class="btn subir">+ Agregar video<input type="file" id="in-videos" accept="video/mp4,video/quicktime,video/webm,video/3gpp,video/x-matroska,video/x-msvideo" multiple></label>
+      <label class="btn subir">+ Agregar video<input type="file" id="in-videos" accept="video/*" multiple></label>
       <p class="muted small" style="margin:8px 0 0">Máximo 50 MB por video.</p></div>
 
     <div class="fila-acciones">
@@ -189,7 +190,7 @@ async function ficha(id, refresco = false) {
   if (esAdmin()) $("#btn-eliminar", v).onclick = () => eliminarEquipo(e);
   qrImagen(link).then((src) => { if ($("#qr-img")) $("#qr-img").src = src; })
     .catch(() => aviso("No se pudo generar el código QR (¿sin internet?).", true));
-  $("#in-fotos", v).onchange = (ev) => subirArchivos(e, ev.target.files, "foto");
+  $("#in-fotos", v).onchange = $("#in-foto-cam", v).onchange = (ev) => subirArchivos(e, ev.target.files, "foto");
   $("#in-videos", v).onchange = (ev) => subirArchivos(e, ev.target.files, "video");
   cargarMedios(e.id);
   cargarExterna(e);
@@ -448,7 +449,7 @@ async function formulario(id) {
         <select id="f-estado" name="estado"><option value="">(sin estado)</option>
           ${unicos([...estados, estadoActual]).map((o) => `<option${o === estadoActual ? " selected" : ""}>${esc(o)}</option>`).join("")}
         </select></div>
-      ${e ? "" : `<div class="panel"><h2>Fotos</h2><input type="file" name="fotos" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif" multiple>
+      ${e ? "" : `<div class="panel"><h2>Fotos</h2><input type="file" name="fotos" accept="image/*" multiple>
         <p class="muted small" style="margin:6px 0 0">Opcional. También puedes agregar fotos y videos después, desde la ficha.</p></div>`}
       <div class="guardar"><a class="btn" href="${volver}">Cancelar</a>
         <button type="submit" class="primary" id="btn-guardar">${e ? "Guardar cambios" : "Guardar equipo"}</button></div>

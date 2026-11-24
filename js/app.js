@@ -13,6 +13,7 @@ import * as excel from "./excel.js";
 import * as ordenes from "./ordenes.js";
 import * as pendientes from "./pendientes.js";
 import * as sanitizacion from "./sanitizacion.js";
+import * as calendario from "./calendario.js";
 import * as admin from "./admin.js";
 import { renderPublico } from "./publico.js";
 import { subirMedios } from "./medios.js";
@@ -20,7 +21,7 @@ import { subirMedios } from "./medios.js";
 // ---------- Rutas ----------
 // modulo: requiere ese módulo activo · acceso: "staff" | "jefe" | "admin" (por defecto: cualquier usuario con módulo)
 const RUTAS = [
-  ...equipos.rutas, ...inventario.rutas, ...servicios.rutas, ...sala.rutas, ...bobinado.rutas, ...precios.rutas, ...ordenes.rutas, ...pendientes.rutas, ...sanitizacion.rutas, ...excel.rutas, ...admin.rutas,
+  ...equipos.rutas, ...inventario.rutas, ...calendario.rutas, ...servicios.rutas, ...sala.rutas, ...bobinado.rutas, ...precios.rutas, ...ordenes.rutas, ...pendientes.rutas, ...sanitizacion.rutas, ...excel.rutas, ...admin.rutas,
 ];
 
 function mostrarPantalla(cual) {
@@ -122,6 +123,7 @@ function pintarNav() {
   const donde = esAdmin() ? "" : esCliente() ? H.cliente?.nombre : H.empresa?.nombre;
   $("#quien").innerHTML = `<button type="button" class="link-nombre" id="btn-mi-nombre" title="Cambiar mi nombre">${esc(p.nombre || p.email)} ✎</button><br>${esc(nombreRol(p.rol, H.empresa?.id))}${donde ? " · " + esc(donde) : ""}`;
   pintarFoto();
+  pintarAvisos();
   document.documentElement.style.setProperty("--accent", H.empresa?.color || "");
   if (!H.empresa?.color) document.documentElement.style.removeProperty("--accent");
 }
@@ -160,6 +162,19 @@ $("#empresas-app").addEventListener("click", (ev) => {
   const destino = actual.startsWith("#/admin") ? location.hash : sigue ? actual : primero ? MODULOS[primero].ruta : "#/admin";
   if (location.hash === destino) router(); else location.hash = destino;
 });
+
+// Campanita: visitas del calendario atrasadas o de los próximos 7 días (personal con el módulo Servicios)
+async function pintarAvisos() {
+  const b = $("#btn-avisos");
+  b.hidden = !(esStaff() && moduloActivo("servicios"));
+  if (b.hidden) return;
+  const n = await calendario.contarAvisos();
+  $("#avisos-n").textContent = n > 99 ? "99+" : n;
+  $("#avisos-n").hidden = !n;
+  b.title = n ? `${n} visita${n === 1 ? "" : "s"} atrasada${n === 1 ? "" : "s"} o en los próximos ${calendario.AVISO_DIAS} días` : "Sin visitas próximas";
+  b.setAttribute("aria-label", b.title);
+}
+$("#btn-avisos").addEventListener("click", () => (location.hash = "#/servicios/calendario"));
 
 // Foto de perfil (bucket privado: URL firmada, guardada mientras no cambie la foto)
 let fotoUrl = { ruta: null, url: null };

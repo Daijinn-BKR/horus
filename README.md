@@ -64,11 +64,15 @@ Las apps originales quedaron sin cambios en `legado/` como referencia (esa carpe
   agregar **fotos y videos** (máx. 50 MB por video) mientras la orden no esté verificada; cada uno puede borrar
   los que subió, y el admin cualquiera.
 - **Servicios** (Lafken): cada visita lleva su **IV** (informe de visita, 4 números o más), el **número de visitas**
-  del servicio y **una foto**. Si el servicio tiene más visitas, la tarjeta muestra “Iniciar segunda visita” (tercera…),
+  del servicio y **una foto** (botón *Tomar foto* para usar la cámara del celular). La **última visita** lleva además el
+  **CSI** (5 números): con 1 visita se entregan IV y CSI; con 2, la primera lleva IV y la segunda IV y CSI. Si el servicio tiene más visitas, la tarjeta muestra “Iniciar segunda visita” (tercera…),
   que abre la visita siguiente con el mismo cliente, tipo y personal. Al marcar el tipo **SEAP**, solo se pueden
   elegir clientes que tengan una sanitización en estado **Coordinado** (lo revisa también la base de datos). Se elige
   la sanitización y cuántos estanques se hicieron: se **descuentan de los estanques pendientes**. Si se edita o se
   borra el servicio, la cuenta se corrige sola (mientras la sanitización siga coordinada).
+- **Calendario de visitas** (Servicios → Calendario): planes para clientes frecuentes (ej. Santo Tomás, desratización
+  cada 2 meses). La próxima visita se calcula desde el último servicio de ese tipo al cliente. Lo arman el supervisor y el
+  admin; todos lo ven. La **campanita** de arriba muestra cuántas visitas están atrasadas o vienen en los próximos 7 días.
 - **Sanitización de estanques** (Lafken): solo la ven y usan el supervisor y el admin. Tres pestañas. **Cotizado**:
   dónde, cliente y cuántos estanques. Cuando se aprueba, se pasa a **Coordinado**, donde se anota quién va, cuándo y
   cuántos estanques quedan por hacer. Después se pasa a **Finalizado**. El supervisor es un usuario con rol *Jefe* en la empresa Lafken.
