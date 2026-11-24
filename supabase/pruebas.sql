@@ -289,5 +289,30 @@ do $$ declare r jsonb; begin
 end $$;
 reset role;
 
+-- ---------- Clientes desde RUT Clientes ----------
+insert into rut_clientes (rut, nombre, comuna) values ('96.870.780-9', 'ACCOR HOTELS CHILE S A', 'LAS CONDES');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', true);  -- operario de Lafken
+set local role authenticated;
+do $$ declare v uuid; w uuid; begin
+  if not exists (select 1 from buscar_clientes('lafken', 'a') where nombre = 'ACCOR HOTELS CHILE S A' and id is null) then
+    raise exception 'FALLA: buscar "a" no encuentra ACCOR en RUT Clientes';
+  end if;
+  if not exists (select 1 from buscar_clientes('lafken', '96870') where nombre = 'ACCOR HOTELS CHILE S A') then
+    raise exception 'FALLA: buscar por RUT sin puntos no encuentra ACCOR';
+  end if;
+  if exists (select 1 from buscar_clientes('omega', 'a')) then raise exception 'FALLA: un operario de Lafken busca en Omega'; end if;
+  v := cliente_desde_rut('lafken', '96.870.780-9');
+  w := cliente_desde_rut('lafken', '96.870.780-9');
+  if v is distinct from w then raise exception 'FALLA: elegir dos veces el mismo RUT creó dos clientes'; end if;
+  if (select rut from clientes where id = v) <> '96.870.780-9' then raise exception 'FALLA: el cliente creado no tiene su RUT'; end if;
+  if (select count(*) from buscar_clientes('lafken', 'accor')) <> 1 or (select id from buscar_clientes('lafken', 'accor')) <> v then
+    raise exception 'FALLA: ACCOR aparece repetido después de crearlo';
+  end if;
+  begin perform cliente_desde_rut('omega', '96.870.780-9'); raise exception 'FALLA: creó un cliente en otra empresa';
+  exception when insufficient_privilege then null; end;
+  raise notice 'OK: clientes desde RUT Clientes';
+end $$;
+reset role;
+
 rollback;
 \echo 'Todas las pruebas pasaron.'

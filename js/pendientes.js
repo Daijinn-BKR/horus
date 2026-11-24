@@ -2,7 +2,7 @@
 // para cuándo y la lista de materiales con precio, con el monto total calculado.
 import {
   sb, H, $, $$, esc, aviso, msgError, msgCarga, dato, vista, cargando, fecha, fmtHora, hoy, nf, descargarCSV,
-  clientesEmpresa, esAdmin,
+  clientesEmpresa, campoCliente, activarCampoCliente, clienteElegido, esAdmin,
 } from "./nucleo.js";
 
 // Solo jefe eléctrico y admin (lo revisa el router)
@@ -158,8 +158,7 @@ async function formulario(id) {
         <div class="grid2">
           <div><label for="f-lugar">Dónde se hará</label><input id="f-lugar" value="${esc(p.lugar || "")}" placeholder="Dirección, planta o sector"></div>
           <div><label for="f-fecha">Fecha estimada</label><input id="f-fecha" type="date" value="${esc(p.fecha_estimada || "")}"></div>
-          <div><label for="f-cliente">Cliente</label><select id="f-cliente"><option value="">— Sin cliente —</option>
-            ${clientes.map((c) => `<option value="${c.id}"${c.id === p.cliente_id ? " selected" : ""}>${esc(c.nombre)}</option>`).join("")}</select></div>
+          <div><label for="f-cliente">Cliente</label>${campoCliente("f-cliente", clientes.find((c) => c.id === p.cliente_id))}</div>
           <div><label for="f-estado">Estado</label><select id="f-estado">
             ${ESTADOS.map((e) => `<option${e === p.estado ? " selected" : ""}>${e}</option>`).join("")}</select></div>
         </div>
@@ -224,9 +223,11 @@ async function formulario(id) {
     if (ev.target.matches(".m-prec") && d === cont.lastElementChild) { $(".m-desc", fila()).focus(); recalcular(); }
   });
 
+  activarCampoCliente($("#f-cliente", v));
   $("#form-pp", v).onsubmit = async (ev) => {
     ev.preventDefault();
-    const nombre = $("#f-nombre").value.trim();
+    const nombre = $("#f-nombre").value.trim(), cliente_id = await clienteElegido($("#f-cliente"));
+    if (cliente_id === undefined) return;
     if (!nombre) { $("#f-nombre").focus(); return aviso("Indica el nombre del proyecto.", true); }
     const items = leer().filter((x) => x.descripcion || x.precio);
     const malo = items.findIndex((x) => !x.descripcion || Number(x.cantidad) < 0 || Number(x.precio) < 0 || x.cantidad === "");
@@ -237,7 +238,7 @@ async function formulario(id) {
       p_id: id || null,
       p_datos: {
         empresa_id: H.empresa.id, nombre, lugar: $("#f-lugar").value, fecha_estimada: $("#f-fecha").value,
-        cliente_id: $("#f-cliente").value, descripcion: $("#f-desc").value, estado: $("#f-estado").value,
+        cliente_id, descripcion: $("#f-desc").value, estado: $("#f-estado").value,
         agregar_iva: $("#f-iva").checked,
       },
       p_materiales: items.map((x) => ({ ...x, cantidad: Number(x.cantidad) || 0, precio: Number(x.precio) || 0 })),

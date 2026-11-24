@@ -1,7 +1,7 @@
 // Horus · Bobinado: registro de motores rebobinados (solo admin y operarios con permiso)
 import {
   sb, H, $, esc, dato, aviso, msgError, vista, cargando, fecha, hoy, nf, descargarCSV,
-  clientesEmpresa, esAdmin,
+  clientesEmpresa, campoCliente, activarCampoCliente, clienteElegido, esAdmin,
 } from "./nucleo.js";
 
 export const rutas = [
@@ -137,8 +137,7 @@ async function formulario(id) {
     <h1>${id ? "Editar bobinado" : "Nuevo bobinado"}</h1>
     <form id="form-bob" novalidate>
       <div class="panel"><h2>General</h2><div class="grid2">
-        <div><label for="f-cliente">Cliente</label><select id="f-cliente"><option value="">— Sin cliente —</option>
-          ${clientes.map((c) => `<option value="${c.id}"${c.id === b.cliente_id ? " selected" : ""}>${esc(c.nombre)}</option>`).join("")}</select></div>
+        <div><label for="f-cliente">Cliente</label>${campoCliente("f-cliente", clientes.find((c) => c.id === b.cliente_id))}</div>
         <div><label for="f-fecha" class="req">Fecha</label><input id="f-fecha" type="date" value="${esc(b.fecha)}"></div>
         <div><label for="f-estado">Estado</label><select id="f-estado">${ESTADOS.map((e) => `<option${e === b.estado ? " selected" : ""}>${e}</option>`).join("")}</select></div>
         <div><label for="f-fases">Fases</label><select id="f-fases">
@@ -151,11 +150,14 @@ async function formulario(id) {
         <button class="primary" type="submit" id="btn-guardar">${id ? "Guardar cambios" : "Guardar bobinado"}</button></div>
     </form>`);
 
+  activarCampoCliente($("#f-cliente", v));
   $("#form-bob", v).onsubmit = async (ev) => {
     ev.preventDefault();
     if (!$("#f-fecha").value) return aviso("Indica la fecha.", true);
+    const cliente_id = await clienteElegido($("#f-cliente"));
+    if (cliente_id === undefined) return;
     const fila = {
-      cliente_id: $("#f-cliente").value || null, fecha: $("#f-fecha").value, estado: $("#f-estado").value,
+      cliente_id, fecha: $("#f-fecha").value, estado: $("#f-estado").value,
       fases: Number($("#f-fases").value), potencia_unidad: $("#f-potencia_unidad").value,
       observaciones: $("#f-obs").value.trim() || null,
     };

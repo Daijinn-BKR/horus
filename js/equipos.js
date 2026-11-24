@@ -1,7 +1,7 @@
 // Horus · Equipos (motores y bombas): fichas, mediciones, fotos/videos y QR
 import {
   sb, H, OPC, $, $$, esc, aviso, msgError, vista, cargando, alSalirDeVista, fecha, fechaHora, hoy,
-  chipEstado, unicos, linkEquipo, qrImagen, dato, descargarCSV, clientesEmpresa, esAdmin, esCliente,
+  chipEstado, unicos, linkEquipo, qrImagen, dato, descargarCSV, clientesEmpresa, campoCliente, activarCampoCliente, clienteElegido, esAdmin, esCliente,
   abrirLector, cerrarLector,
 } from "./nucleo.js";
 import { fichaLimitadaHTML } from "./publico.js";
@@ -423,11 +423,6 @@ async function formulario(id) {
   if (!equipos.length) await cargarEquipos();
   const clientes = await clientesEmpresa();
   const volver = e ? "#/equipos/" + encodeURIComponent(e.id) : "#/equipos";
-  if (!clientes.length) {
-    vista(`<a href="${volver}" class="volver">← Volver</a><div class="panel"><h2>Primero hay que crear clientes</h2>
-      <p class="muted">Cada equipo pertenece a un cliente. ${esAdmin() ? `<a href="#/admin/clientes">Crear clientes</a>.` : "Pide al administrador que agregue el cliente."}</p></div>`);
-    return;
-  }
   const val = (k) => (e ? e[k] ?? "" : "");
   const estados = opciones("estado");
   const estadoActual = e ? e.estado ?? "" : (estados[0] || "");
@@ -437,9 +432,7 @@ async function formulario(id) {
     <form id="form-equipo" novalidate>
       <div class="panel"><h2>Datos del equipo</h2>
         <label for="f-cliente" class="req">Cliente</label>
-        <select id="f-cliente" name="cliente_id" required><option value="">— Selecciona —</option>
-          ${clientes.map((c) => `<option value="${c.id}"${e?.cliente_id === c.id ? " selected" : ""}>${esc(c.nombre)}</option>`).join("")}
-        </select>
+        ${campoCliente("f-cliente", clientes.find((c) => c.id === e?.cliente_id))}
         <div class="grid2">${GENERAL.map((c) => `<div>${campoHTML(c, val(c.k))}</div>`).join("")}</div>
       </div>
       <div class="panel"><h2>Mediciones</h2><div class="medidas-form">
@@ -460,13 +453,16 @@ async function formulario(id) {
       <div class="guardar"><a class="btn" href="${volver}">Cancelar</a>
         <button type="submit" class="primary" id="btn-guardar">${e ? "Guardar cambios" : "Guardar equipo"}</button></div>
     </form>`);
+  activarCampoCliente($("#f-cliente", v));
   $("#f-cliente", v).focus();
 
   $("#form-equipo", v).onsubmit = async (ev) => {
     ev.preventDefault();
     const f = ev.target;
-    const datos = { cliente_id: f.elements.cliente_id.value || null };
-    if (!datos.cliente_id) { aviso("Falta el cliente.", true); f.elements.cliente_id.focus(); return; }
+    const cliente_id = await clienteElegido($("#f-cliente"));
+    if (cliente_id === undefined) return;
+    if (!cliente_id) { aviso("Falta el cliente.", true); $("#f-cliente").focus(); return; }
+    const datos = { cliente_id };
     for (const c of TEXTO) {
       const x = (f.elements[c.k]?.value ?? "").trim();
       datos[c.k] = x === "" ? null : x;

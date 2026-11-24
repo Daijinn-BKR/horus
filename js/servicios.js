@@ -1,7 +1,7 @@
 // Horus · Servicios (registro de visitas: desratización, mantención, etc.)
 import {
   sb, H, $, $$, esc, aviso, msgError, vista, cargando, fecha, hoy, descargarCSV,
-  clientesEmpresa, opcionesServicio, esAdmin, esCliente,
+  clientesEmpresa, campoCliente, activarCampoCliente, clienteElegido, opcionesServicio, esAdmin, esCliente,
 } from "./nucleo.js";
 import { subirMedios } from "./medios.js";
 
@@ -119,9 +119,7 @@ async function formulario(id, desde = null) {
   }
   const porHacer = (x) => x.pendientes + (x.id === s.sanitizacion_id ? s.estanques || 0 : 0);
   const coordinados = new Set(sans.map((x) => x.cliente_id));
-  const opcionesCliente = (soloSeap, sel) => `<option value="">— Selecciona —</option>` + clientes
-    .filter((c) => !soloSeap || coordinados.has(c.id))
-    .map((c) => `<option value="${c.id}"${c.id === sel ? " selected" : ""}>${esc(c.nombre)}</option>`).join("");
+  const seapMarcado = () => $$("#f-tipos input:checked").some((i) => i.value === "SEAP");
   const personal = (pers.data || []).filter((p) => p.activo || s.ops.includes(p.id));
   // En un servicio nuevo, quien lo registra aparece marcado si está vinculado a Personal
   const marcados = id || desde ? s.ops : personal.filter((p) => p.activo && p.usuario_id === H.usuario.id).map((p) => p.id);
@@ -131,7 +129,7 @@ async function formulario(id, desde = null) {
     <h1>${id ? "Editar servicio" : desde ? `${ORDINAL[s.visita] ? ORDINAL[s.visita][0].toUpperCase() + ORDINAL[s.visita].slice(1) : "Siguiente"} visita` : "Nuevo servicio"}</h1>
     <form id="form-srv" class="panel" novalidate>
       <label for="f-cliente" class="req">Cliente</label>
-      <select id="f-cliente">${opcionesCliente(s.tipos.includes("SEAP"), s.cliente_id)}</select>
+      ${campoCliente("f-cliente", clientes.find((c) => c.id === s.cliente_id))}
       <div id="seap-box" ${s.tipos.includes("SEAP") ? "" : "hidden"}>
         <p class="muted small">SEAP: solo aparecen los clientes con una sanitización coordinada. Los estanques se descuentan de los pendientes.</p>
         <div class="grid2">
@@ -140,7 +138,6 @@ async function formulario(id, desde = null) {
             <input id="f-estanques" type="number" inputmode="numeric" min="1" step="1" value="${s.estanques || ""}"></div>
         </div>
       </div>
-      ${clientes.length ? "" : `<p class="muted small">No hay clientes. ${esAdmin() ? `<a href="#/admin/clientes">Crear clientes</a>` : "Pide al administrador que los agregue."}</p>`}
       <div class="grid2">
         <div><label for="f-fecha" class="req">Fecha</label><input id="f-fecha" type="date" value="${s.fecha}"></div>
         <div><label for="f-iv" class="req">IV (informe de visita)</label><input id="f-iv" inputmode="numeric" pattern="[0-9]{4,}" placeholder="Mínimo 4 números" value="${esc(s.iv || "")}"></div>
@@ -166,24 +163,30 @@ async function formulario(id, desde = null) {
         <button class="primary" type="submit" id="btn-guardar">${id ? "Guardar cambios" : "Guardar servicio"}</button></div>
     </form>`);
   const pintarSan = () => {
-    const l = sans.filter((x) => x.cliente_id === $("#f-cliente").value), sel = $("#f-san").value || s.sanitizacion_id;
+    const l = sans.filter((x) => x.cliente_id === $("#f-cliente").dataset.id), sel = $("#f-san").value || s.sanitizacion_id;
     $("#f-san").innerHTML = l.length
       ? l.map((x) => `<option value="${x.id}"${x.id === sel ? " selected" : ""}>${esc(x.lugar)} · quedan ${porHacer(x)} estanque${porHacer(x) === 1 ? "" : "s"}</option>`).join("")
       : `<option value="">— Elige primero el cliente —</option>`;
   };
   pintarSan();
+  // Con SEAP marcado, la búsqueda es solo entre los clientes con una sanitización coordinada
+  activarCampoCliente($("#f-cliente", v), { local: () => (seapMarcado() ? clientes.filter((c) => coordinados.has(c.id)) : null) });
   $("#f-cliente", v).onchange = pintarSan;
   $("#f-tipos", v).onchange = () => {
     const marcados = $$("#f-tipos input:checked").map((i) => i.value), seap = marcados.includes("SEAP");
     $("#otros-box").hidden = !marcados.includes("Otros");
     $("#seap-box").hidden = !seap;
-    $("#f-cliente").innerHTML = opcionesCliente(seap, $("#f-cliente").value); // si el cliente no tiene nada coordinado, queda sin elegir
+    const fc = $("#f-cliente");
+    if (seap && (fc.dataset.rut || (fc.dataset.id && !coordinados.has(fc.dataset.id)))) { // sin nada coordinado: queda sin elegir
+      fc.value = ""; fc.dataset.id = ""; fc.dataset.rut = "";
+    }
     pintarSan();
   };
 
   $("#form-srv", v).onsubmit = async (ev) => {
     ev.preventDefault();
-    const cliente_id = $("#f-cliente").value, fechaS = $("#f-fecha").value;
+    const cliente_id = await clienteElegido($("#f-cliente")), fechaS = $("#f-fecha").value;
+    if (cliente_id === undefined) return;
     const tiposSel = $$("#f-tipos input:checked").map((i) => i.value);
     const ops = $$("#f-ops input:checked").map((i) => i.value);
     if (!cliente_id) return aviso("Selecciona un cliente.", true);

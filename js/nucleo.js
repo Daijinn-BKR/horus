@@ -210,6 +210,80 @@ export async function clientesEmpresa(forzar = false) {
 }
 export function olvidarClientes() { for (const k in cacheClientes) delete cacheClientes[k]; }
 
+// ---------- Campo Cliente con búsqueda ----------
+// Con cientos de clientes un <select> se pone lento: la lista aparece recién al escribir (ej.: "a" → ACCOR HOTELS).
+// Busca en los clientes de la empresa y en RUT Clientes; uno de RUT Clientes se crea como cliente de la empresa al guardar.
+export function campoCliente(id, cliente = null) {
+  return `<div class="combo"><input id="${id}" type="search" autocomplete="off" placeholder="Escribe el nombre o RUT…"
+    value="${esc(cliente?.nombre || "")}" data-id="${esc(cliente?.id || "")}" data-rut=""
+    role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="${id}-lista">
+    <ul class="combo-lista" id="${id}-lista" role="listbox" hidden></ul></div>`;
+}
+const sinTildes = (t) => String(t ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+// local(): lista propia en la que buscar (ej. solo clientes con sanitización coordinada); si devuelve null, busca en la base
+export function activarCampoCliente(input, { local } = {}) {
+  const lista = input.nextElementSibling;
+  let items = [], activo = -1, t, pedido = 0;
+  const cerrar = () => { lista.hidden = true; input.setAttribute("aria-expanded", "false"); activo = -1; };
+  const pintar = () => {
+    lista.innerHTML = items.length ? items.map((c, i) => `<li role="option" id="${input.id}-op${i}" data-i="${i}"
+      aria-selected="${i === activo}">${esc(c.nombre)}<small>${esc([c.rut, c.comuna].filter(Boolean).join(" · "))}</small></li>`).join("")
+      : `<li class="vacio-combo">Sin resultados</li>`;
+    if (activo >= 0) input.setAttribute("aria-activedescendant", `${input.id}-op${activo}`); else input.removeAttribute("aria-activedescendant");
+    lista.hidden = false; input.setAttribute("aria-expanded", "true");
+  };
+  const elegir = (c) => {
+    input.value = c.nombre; input.dataset.id = c.id || ""; input.dataset.rut = c.id ? "" : c.rut;
+    cerrar(); input.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  input.addEventListener("input", () => {
+    const habia = input.dataset.id || input.dataset.rut;
+    input.dataset.id = ""; input.dataset.rut = "";
+    if (habia) input.dispatchEvent(new Event("change", { bubbles: true }));
+    const q = input.value.trim(), n = ++pedido;
+    clearTimeout(t);
+    if (!q) { items = []; cerrar(); return; }
+    t = setTimeout(async () => {
+      const propia = local?.();
+      if (propia) items = propia.filter((c) => sinTildes(`${c.nombre} ${c.rut || ""}`).includes(sinTildes(q))).slice(0, 15);
+      else {
+        const { data, error } = await sb.rpc("buscar_clientes", { p_empresa: H.empresa.id, p_texto: q });
+        if (n !== pedido) return; // llegó la respuesta de una búsqueda anterior
+        if (error) return aviso(msgError(error), true);
+        items = data;
+      }
+      activo = -1; pintar();
+    }, 200);
+  });
+  input.addEventListener("keydown", (ev) => {
+    if (lista.hidden || !items.length) return;
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      activo = (activo + (ev.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+      pintar();
+    } else if (ev.key === "Enter" && activo >= 0) { ev.preventDefault(); elegir(items[activo]); }
+    else if (ev.key === "Escape") cerrar();
+  });
+  lista.addEventListener("mousedown", (ev) => { // mousedown: antes de que el campo pierda el foco
+    const li = ev.target.closest("[data-i]");
+    if (li) { ev.preventDefault(); elegir(items[+li.dataset.i]); }
+  });
+  input.addEventListener("blur", () => setTimeout(cerrar, 150));
+}
+// Id del cliente elegido (crea el cliente si vino de RUT Clientes). null = campo vacío; undefined = error (ya avisado).
+export async function clienteElegido(input) {
+  if (input.dataset.id) return input.dataset.id;
+  if (input.dataset.rut) {
+    const { data, error } = await sb.rpc("cliente_desde_rut", { p_empresa: H.empresa.id, p_rut: input.dataset.rut });
+    if (error) { aviso(msgError(error), true); return undefined; }
+    olvidarClientes();
+    input.dataset.id = data; input.dataset.rut = "";
+    return data;
+  }
+  if (input.value.trim()) { input.focus(); aviso("Elige el cliente de la lista (escribe y toca uno de los resultados).", true); return undefined; }
+  return null;
+}
+
 export function opcionesServicio() {
   const t = OPC.tipos_servicio || {};
   return t[H.empresa?.id] || ["Otros"];

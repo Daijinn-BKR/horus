@@ -2,7 +2,7 @@
 // Solo el supervisor (rol jefe de Lafken) y el admin la ven, la editan y cambian el estado (lo revisa la base de datos).
 import {
   sb, H, $, esc, aviso, msgError, msgCarga, dato, vista, cargando, fecha, hoy, descargarCSV,
-  clientesEmpresa, esAdmin, esJefe,
+  clientesEmpresa, campoCliente, activarCampoCliente, clienteElegido, esAdmin, esJefe,
 } from "./nucleo.js";
 
 const ESTADOS = ["Cotizado", "Coordinado", "Finalizado"];
@@ -116,8 +116,7 @@ async function formulario(id) {
     <form id="form-san" novalidate>
       <div class="panel"><h2>Cotización</h2>
         <label for="f-cliente" class="req">Cliente</label>
-        <select id="f-cliente"><option value="">— Selecciona —</option>
-          ${clientes.map((c) => `<option value="${c.id}"${c.id === s.cliente_id ? " selected" : ""}>${esc(c.nombre)}</option>`).join("")}</select>
+        ${campoCliente("f-cliente", clientes.find((c) => c.id === s.cliente_id))}
         <div class="grid2">
           <div><label for="f-lugar" class="req">Dónde</label><input id="f-lugar" value="${esc(s.lugar)}" placeholder="Dirección, centro o planta"></div>
           <div><label for="f-estanques" class="req">Estanques</label><input id="f-estanques" type="number" inputmode="numeric" min="1" step="1" value="${esc(s.estanques)}"></div>
@@ -136,10 +135,12 @@ async function formulario(id) {
         <button class="primary" type="submit" id="btn-guardar">${id ? "Guardar cambios" : "Publicar cotización"}</button></div>
     </form>`);
 
+  activarCampoCliente($("#f-cliente", v));
   $("#form-san", v).onsubmit = async (ev) => {
     ev.preventDefault();
-    const estanques = Number($("#f-estanques").value);
-    const fila = { cliente_id: $("#f-cliente").value, lugar: $("#f-lugar").value.trim(), estanques, detalle: $("#f-detalle").value.trim() || null };
+    const estanques = Number($("#f-estanques").value), cliente_id = await clienteElegido($("#f-cliente"));
+    if (cliente_id === undefined) return;
+    const fila = { cliente_id, lugar: $("#f-lugar").value.trim(), estanques, detalle: $("#f-detalle").value.trim() || null };
     if (!fila.cliente_id) return aviso("Selecciona un cliente.", true);
     if (!fila.lugar) return aviso("Indica dónde es.", true);
     if (!Number.isInteger(estanques) || estanques < 1) return aviso("Indica cuántos estanques (1 o más).", true);

@@ -2,7 +2,7 @@
 // el personal asignado la inicia y la termina con un informe (y fotos/videos); el jefe (o un admin) la verifica.
 import {
   sb, H, OPC, $, $$, esc, aviso, msgError, msgCarga, dato, vista, cargando, fecha, fmtHora, hoy, descargarCSV,
-  clientesEmpresa, esAdmin, esJefe, alSalirDeVista,
+  clientesEmpresa, campoCliente, activarCampoCliente, clienteElegido, esAdmin, esJefe, alSalirDeVista,
 } from "./nucleo.js";
 import { subirMedios, pintarMedios, borrarMedio } from "./medios.js";
 
@@ -279,8 +279,7 @@ async function formulario(id) {
           ${tipos.map((t) => `<option${t === o.tipo ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
         <div><label for="f-prio">Prioridad</label><select id="f-prio">
           ${PRIORIDADES.map((p) => `<option${p === o.prioridad ? " selected" : ""}>${p}</option>`).join("")}</select></div>
-        <div><label for="f-cliente">Cliente</label><select id="f-cliente"><option value="">— Sin cliente —</option>
-          ${clientes.map((c) => `<option value="${c.id}"${c.id === o.cliente_id ? " selected" : ""}>${esc(c.nombre)}</option>`).join("")}</select></div>
+        <div><label for="f-cliente">Cliente</label>${campoCliente("f-cliente", clientes.find((c) => c.id === o.cliente_id))}</div>
         <div><label for="f-fecha">Fecha programada</label><input id="f-fecha" type="date" value="${esc(o.fecha_programada || "")}"></div>
       </div>
       <label for="f-ubic">Ubicación / dirección</label><input id="f-ubic" value="${esc(o.ubicacion || "")}" placeholder="Ej.: Sala eléctrica, piso -1">
@@ -295,14 +294,16 @@ async function formulario(id) {
         <button class="primary" type="submit" id="btn-guardar">${id ? "Guardar cambios" : "Crear orden"}</button></div>
     </form>`);
 
+  activarCampoCliente($("#f-cliente", v));
   $("#form-ot", v).onsubmit = async (ev) => {
     ev.preventDefault();
-    const titulo = $("#f-titulo").value.trim();
+    const titulo = $("#f-titulo").value.trim(), cliente_id = await clienteElegido($("#f-cliente"));
+    if (cliente_id === undefined) return;
     const ops = $$("#f-ops input:checked").map((i) => i.value);
     if (!titulo) return aviso("Indica el trabajo a realizar.", true);
     if (!ops.length) return aviso("Elige al menos una persona a cargo.", true);
     const fila = {
-      titulo, tipo: $("#f-tipo").value, prioridad: $("#f-prio").value, cliente_id: $("#f-cliente").value || null,
+      titulo, tipo: $("#f-tipo").value, prioridad: $("#f-prio").value, cliente_id,
       fecha_programada: $("#f-fecha").value || null, ubicacion: $("#f-ubic").value.trim() || null,
       descripcion: $("#f-desc").value.trim() || null,
     };

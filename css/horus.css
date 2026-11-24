@@ -306,3 +306,13 @@ dl.totales dd { margin: 0; text-align: right; }
   text-align: center; padding: 20px 12px; min-height: 120px; }
 .tarjeta.icono svg { width: 36px; height: 36px; fill: none; stroke: var(--accent); stroke-width: 1.8;
   stroke-linecap: round; stroke-linejoin: round; }
+
+/* Campo Cliente con búsqueda */
+.combo { position: relative; }
+.combo-lista { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 2px); margin: 0; padding: 4px 0; list-style: none;
+  max-height: 280px; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .15); }
+.combo-lista li { padding: 8px 12px; cursor: pointer; display: flex; flex-direction: column; }
+.combo-lista li small { color: var(--muted); }
+.combo-lista li[aria-selected="true"], .combo-lista li[data-i]:hover { background: var(--bg); }
+.combo-lista .vacio-combo { color: var(--muted); cursor: default; }

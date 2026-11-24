@@ -1713,4 +1713,56 @@ end $$;
 revoke execute on function agregar_facturas(jsonb) from anon, public;
 grant  execute on function agregar_facturas(jsonb) to authenticated;
 
+-- =====================================================================
+--  Clientes desde RUT Clientes (Omega y Lafken): el campo Cliente de los formularios busca en los clientes de la
+--  empresa y en RUT Clientes. Al guardar con uno de RUT Clientes, se crea como cliente de la empresa (con su RUT).
+-- =====================================================================
+create or replace function rut_digitos(p text) returns text language sql immutable as $$
+  select regexp_replace(upper(coalesce(p, '')), '[^0-9K]', '', 'g');
+$$;
+
+-- Hasta 15 resultados: primero los que empiezan con lo escrito. id = null → viene de RUT Clientes (aún no es cliente)
+create or replace function buscar_clientes(p_empresa text, p_texto text)
+returns table (id uuid, rut text, nombre text, comuna text)
+language sql stable security definer set search_path = public as $$
+  with q as (select horus_normal(trim(coalesce(p_texto, ''))) as t, rut_digitos(p_texto) as d),
+  x as (
+    select c.id, c.rut, c.nombre, null::text as comuna from clientes c, q
+     where c.empresa_id = p_empresa
+       and (horus_normal(c.nombre) like '%' || q.t || '%' or (q.d ~ '[0-9]{3}' and rut_digitos(c.rut) like '%' || q.d || '%'))
+    union all
+    select null, r.rut, r.nombre, r.comuna from rut_clientes r, q
+     where (horus_normal(r.nombre) like '%' || q.t || '%' or (q.d ~ '[0-9]{3}' and rut_digitos(r.rut) like '%' || q.d || '%'))
+       and not exists (select 1 from clientes c where c.empresa_id = p_empresa
+                        and (rut_digitos(c.rut) = rut_digitos(r.rut) or lower(c.nombre) = lower(r.nombre))))
+  select x.* from x, q
+   where es_staff(p_empresa) and q.t <> ''
+   order by horus_normal(x.nombre) like q.t || '%' desc, x.nombre
+   limit 15;
+$$;
+revoke execute on function buscar_clientes(text, text) from anon, public;
+grant  execute on function buscar_clientes(text, text) to authenticated;
+
+-- Cliente de la empresa para un RUT de RUT Clientes: el que ya exista (mismo RUT o mismo nombre) o uno nuevo
+create or replace function cliente_desde_rut(p_empresa text, p_rut text) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare r rut_clientes; v uuid;
+begin
+  if not es_staff(p_empresa) then raise exception 'No tienes acceso a esta empresa' using errcode = '42501'; end if;
+  select * into r from rut_clientes where rut = p_rut;
+  if r.rut is null then raise exception 'Ese RUT no está en RUT Clientes'; end if;
+  select id into v from clientes where empresa_id = p_empresa and rut_digitos(rut) = rut_digitos(r.rut) limit 1;
+  if v is null then
+    select id into v from clientes where empresa_id = p_empresa and lower(nombre) = lower(r.nombre) limit 1;
+    if v is not null then update clientes set rut = r.rut where id = v and rut is null and rut_valido(r.rut); end if;
+  end if;
+  if v is null then
+    insert into clientes (empresa_id, nombre, rut)
+    values (p_empresa, r.nombre, case when rut_valido(r.rut) then r.rut end) returning id into v;
+  end if;
+  return v;
+end $$;
+revoke execute on function cliente_desde_rut(text, text) from anon, public;
+grant  execute on function cliente_desde_rut(text, text) to authenticated;
+
 notify pgrst, 'reload schema';
