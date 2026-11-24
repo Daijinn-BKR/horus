@@ -351,5 +351,29 @@ do $$ declare p date; begin
 end $$;
 reset role;
 
+-- ---------- Clientes nuevos: con RUT válido o sin RUT (urgente) ----------
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', true);  -- operario de Lafken
+set local role authenticated;
+do $$ declare a uuid; b uuid; ok boolean := false; begin
+  begin perform crear_cliente('lafken', 'Casa particular don Ernesto López', '1.111.111-1');
+  exception when others then ok := sqlerrm like '%no es válido%'; end;
+  if not ok then raise exception 'FALLA: aceptó un RUT inválido'; end if;
+  a := crear_cliente('lafken', 'Casa particular don Ernesto López', '111111111');
+  if (select rut from clientes where id = a) <> '11.111.111-1' then raise exception 'FALLA: el RUT no quedó con formato'; end if;
+  b := crear_cliente('lafken', 'Casa sin RUT', null);
+  if not (select sin_rut from clientes where id = b) then raise exception 'FALLA: el cliente sin RUT no quedó urgente'; end if;
+  if (select count(*) from clientes_sin_rut('lafken')) <> 1 then raise exception 'FALLA: clientes_sin_rut no lo lista'; end if;
+  if crear_cliente('lafken', 'casa sin rut', null) <> b then raise exception 'FALLA: creó un cliente repetido por nombre'; end if;
+  perform completar_rut(b, '22.222.222-2');
+  if (select sin_rut from clientes where id = b) or exists (select 1 from clientes_sin_rut('lafken')) then
+    raise exception 'FALLA: completar el RUT no lo sacó de urgentes';
+  end if;
+  ok := false;
+  begin perform crear_cliente('omega', 'Otro', null); exception when insufficient_privilege then ok := true; end;
+  if not ok then raise exception 'FALLA: creó un cliente en otra empresa'; end if;
+  raise notice 'OK: clientes nuevos con RUT válido o urgentes sin RUT';
+end $$;
+reset role;
+
 rollback;
 \echo 'Todas las pruebas pasaron.'

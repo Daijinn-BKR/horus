@@ -1829,4 +1829,70 @@ $$;
 revoke execute on function proximas_visitas(text) from anon, public;
 grant  execute on function proximas_visitas(text) to authenticated;
 
+-- =====================================================================
+--  Clientes nuevos desde los formularios (ej. Instalación para "Casa particular don Ernesto López").
+--  Cualquier persona del personal puede crearlos, con RUT válido o, si no lo consigue, sin RUT:
+--  ese cliente queda URGENTE (sin_rut) y aparece en la campanita hasta que alguien complete su RUT.
+-- =====================================================================
+alter table clientes add column if not exists sin_rut boolean not null default false;
+create or replace function clientes_sin_rut_al_dia() returns trigger language plpgsql as $$
+begin
+  if new.rut is not null then new.sin_rut := false; end if;   -- con RUT deja de ser urgente
+  return new;
+end $$;
+drop trigger if exists clientes_sin_rut on clientes;
+create trigger clientes_sin_rut before insert or update on clientes for each row execute function clientes_sin_rut_al_dia();
+
+-- RUT con puntos y guion: 123456789 → 12.345.678-9
+create or replace function rut_formato(p text) returns text language sql immutable as $$
+  select regexp_replace(left(rut_digitos(p), -1), '(\d)(?=(\d{3})+$)', '\1.', 'g') || '-' || right(rut_digitos(p), 1);
+$$;
+
+-- Crea el cliente (o devuelve el que ya existe con ese RUT o ese nombre). p_rut vacío = sin RUT (urgente).
+create or replace function crear_cliente(p_empresa text, p_nombre text, p_rut text) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare v uuid; n text := trim(coalesce(p_nombre, '')); r text := nullif(trim(coalesce(p_rut, '')), '');
+begin
+  if not es_staff(p_empresa) then raise exception 'No tienes acceso a esta empresa' using errcode = '42501'; end if;
+  if length(n) = 0 or length(n) > 120 then raise exception 'Escribe el nombre del cliente (máximo 120 caracteres)'; end if;
+  if r is not null then
+    if not rut_valido(r) then raise exception 'El RUT % no es válido', r; end if;
+    r := rut_formato(r);
+    select id into v from clientes where empresa_id = p_empresa and rut_digitos(rut) = rut_digitos(r) limit 1;
+    if v is not null then return v; end if;
+  end if;
+  select id into v from clientes where empresa_id = p_empresa and lower(nombre) = lower(n) limit 1;
+  if v is not null then
+    if r is not null then update clientes set rut = r where id = v and rut is null; end if;
+    return v;
+  end if;
+  insert into clientes (empresa_id, nombre, rut, sin_rut) values (p_empresa, n, r, r is null) returning id into v;
+  return v;
+end $$;
+revoke execute on function crear_cliente(text, text, text) from anon, public;
+grant  execute on function crear_cliente(text, text, text) to authenticated;
+
+-- Clientes sin RUT de la empresa (para la campanita)
+create or replace function clientes_sin_rut(p_empresa text) returns table (id uuid, nombre text, creado_en timestamptz)
+language sql stable security definer set search_path = public as $$
+  select c.id, c.nombre, c.creado_en from clientes c
+   where c.empresa_id = p_empresa and c.sin_rut and es_staff(p_empresa) order by c.creado_en;
+$$;
+revoke execute on function clientes_sin_rut(text) from anon, public;
+grant  execute on function clientes_sin_rut(text) to authenticated;
+
+-- Completar el RUT de un cliente urgente (cualquier persona del personal de su empresa)
+create or replace function completar_rut(p_cliente uuid, p_rut text) returns void
+language plpgsql security definer set search_path = public as $$
+declare c clientes;
+begin
+  select * into c from clientes where id = p_cliente;
+  if c.id is null or not es_staff(c.empresa_id) then raise exception 'No se encontró el cliente' using errcode = '42501'; end if;
+  if not c.sin_rut then raise exception 'Ese cliente ya tiene RUT'; end if;
+  if not rut_valido(p_rut) then raise exception 'El RUT % no es válido', p_rut; end if;
+  update clientes set rut = rut_formato(p_rut) where id = p_cliente;
+end $$;
+revoke execute on function completar_rut(uuid, text) from anon, public;
+grant  execute on function completar_rut(uuid, text) to authenticated;
+
 notify pgrst, 'reload schema';

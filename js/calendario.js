@@ -3,11 +3,12 @@
 // El supervisor (jefe) o admin crea y edita los planes; todo el personal los ve. La campanita avisa 7 días antes.
 import {
   sb, H, $, $$, esc, aviso, msgError, vista, cargando, fecha, hoy, opcionesServicio, esJefe, esAdmin,
-  campoCliente, activarCampoCliente, clienteElegido,
+  campoCliente, activarCampoCliente, clienteElegido, moduloActivo, normalizarRut, olvidarClientes,
 } from "./nucleo.js";
 
 export const rutas = [
   { patron: /^#\/servicios\/calendario$/, modulo: "servicios", acceso: "staff", render: () => calendario() },
+  { patron: /^#\/avisos$/, acceso: "staff", render: () => avisos() },
 ];
 
 export const AVISO_DIAS = 7;
@@ -32,8 +33,17 @@ const cuando = (p) => {
 };
 
 // Planes con su próxima visita (se guarda 5 minutos para la campanita, que se pinta en cada cambio de pantalla)
-let cache = { clave: null, t: 0, datos: [] };
-export function olvidarAvisos() { cache.t = 0; }
+let cache = { clave: null, t: 0, datos: [] }, cacheSinRut = { clave: null, t: 0, datos: [] };
+export function olvidarAvisos() { cache.t = 0; cacheSinRut.t = 0; }
+// Clientes creados sin RUT (urgentes): aparecen en la campanita hasta que alguien completa su RUT
+async function sinRut(forzar = false) {
+  const clave = H.empresa?.id;
+  if (!forzar && cacheSinRut.clave === clave && Date.now() - cacheSinRut.t < 300000) return cacheSinRut.datos;
+  const { data, error } = await sb.rpc("clientes_sin_rut", { p_empresa: clave });
+  if (error) throw error;
+  cacheSinRut = { clave, t: Date.now(), datos: data };
+  return data;
+}
 async function planes(forzar = false) {
   const clave = H.empresa?.id;
   if (!forzar && cache.clave === clave && Date.now() - cache.t < 300000) return cache.datos;
@@ -42,9 +52,49 @@ async function planes(forzar = false) {
   cache = { clave, t: Date.now(), datos: data };
   return data;
 }
-// Visitas atrasadas o de los próximos 7 días (para la campanita). Si falla, no molesta: 0.
+// Campanita: clientes sin RUT + visitas atrasadas o de los próximos 7 días. Si algo falla, no molesta: 0.
 export async function contarAvisos() {
-  try { return (await planes()).filter((p) => p.activo && diasHasta(p.proxima) <= AVISO_DIAS).length; } catch { return 0; }
+  let n = 0;
+  try { n += (await sinRut()).length; } catch { /* sin la función en la base todavía */ }
+  if (moduloActivo("servicios")) {
+    try { n += (await planes()).filter((p) => p.activo && diasHasta(p.proxima) <= AVISO_DIAS).length; } catch { /* idem */ }
+  }
+  return n;
+}
+
+// Página de la campanita
+async function avisos() {
+  cargando();
+  let urgentes = [], visitas = [];
+  try {
+    urgentes = await sinRut(true);
+    if (moduloActivo("servicios")) visitas = (await planes(true)).filter((p) => p.activo && diasHasta(p.proxima) <= AVISO_DIAS);
+  } catch (e) { vista(`<p class="vacio">${esc(msgError(e))}</p>`); return; }
+  const v = vista(`<h1>Avisos</h1>
+    <div class="panel"><h2>Clientes sin RUT <span class="chip mal">Urgente</span></h2>
+      <p class="muted small">Se crearon sin RUT. Escribe el RUT y guárdalo para que queden bien como clientes.</p>
+      <div id="av-rut" class="lista">${urgentes.length ? urgentes.map((c) => `<div class="tarjeta"><div class="t-top">
+        <div><strong>${esc(c.nombre)}</strong><div class="muted small">Creado el ${fecha(c.creado_en)}</div></div>
+        <div class="acciones" style="margin:0"><input aria-label="RUT de ${esc(c.nombre)}" placeholder="12.345.678-9" data-rut="${c.id}" style="width:150px">
+          <button class="chico primary" data-guardar="${c.id}">Guardar RUT</button></div></div></div>`).join("")
+        : `<p class="muted">No hay clientes sin RUT.</p>`}</div></div>
+    ${moduloActivo("servicios") ? `<div class="panel"><h2>Visitas atrasadas o de los próximos ${AVISO_DIAS} días</h2>
+      <div class="lista">${visitas.length ? visitas.map((p) => `<div class="tarjeta"><div class="t-top">
+        <div><strong>${esc(p.cliente)}</strong> · ${esc(p.tipo)}<div class="muted small">próxima: <b>${fecha(p.proxima)}</b></div></div>
+        <div class="acciones" style="margin:0">${cuando(p)}</div></div></div>`).join("") : `<p class="muted">No hay visitas próximas.</p>`}</div>
+      <a class="btn" href="#/servicios/calendario">Ver calendario</a></div>` : ""}`);
+  $("#av-rut", v).onclick = async (ev) => {
+    const id = ev.target.closest("[data-guardar]")?.dataset.guardar;
+    if (!id) return;
+    const campo = $(`[data-rut="${id}"]`, v), rut = normalizarRut(campo.value);
+    if (!rut) { campo.focus(); return aviso("El RUT no es válido.", true); }
+    const { error } = await sb.rpc("completar_rut", { p_cliente: id, p_rut: rut });
+    if (error) return aviso(msgError(error), true);
+    olvidarAvisos(); olvidarClientes();
+    aviso("RUT guardado.");
+    document.dispatchEvent(new Event("horus-avisos"));
+    avisos();
+  };
 }
 
 async function calendario() {

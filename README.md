@@ -22,7 +22,9 @@ Al hacer clic en un RUT se abre un mini menú con sus **facturas asociadas**.
 **RUT Clientes son los clientes de Omega y Lafken**: el campo *Cliente* de equipos, servicios, sanitización, órdenes,
 pendientes y bobinado es un buscador (la lista aparece al escribir; ej.: "a" → ACCOR HOTELS) que busca en los clientes
 de la empresa y en RUT Clientes, por nombre o RUT. Al guardar con uno de RUT Clientes, se crea solo como cliente de esa
-empresa, con su RUT.
+empresa, con su RUT. Si el cliente es nuevo (ej. una instalación en una casa particular), la última opción de la lista
+es **+ Crear cliente nuevo**: pide nombre y RUT válido; si no se consigue el RUT, se marca *No tengo el RUT* y el
+cliente queda **urgente** en la campanita (Avisos) hasta que alguien escriba su RUT.
 **Subir facturas** (uno o varios PDF de factura electrónica a la vez): Horus lee de cada PDF el RUT, nombre,
 dirección, comuna y ciudad del receptor, la fecha y el total (las mismas reglas de `extraer.py`) y suma la factura al
 cliente al instante (o crea el cliente si es nuevo; una factura ya registrada no se repite). Solo se guardan los datos,

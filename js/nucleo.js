@@ -227,12 +227,14 @@ export function activarCampoCliente(input, { local } = {}) {
   const cerrar = () => { lista.hidden = true; input.setAttribute("aria-expanded", "false"); activo = -1; };
   const pintar = () => {
     lista.innerHTML = items.length ? items.map((c, i) => `<li role="option" id="${input.id}-op${i}" data-i="${i}"
-      aria-selected="${i === activo}">${esc(c.nombre)}<small>${esc([c.rut, c.comuna].filter(Boolean).join(" · "))}</small></li>`).join("")
+      aria-selected="${i === activo}"${c.nuevo ? ` class="nuevo-combo">+ Crear cliente nuevo: «${esc(c.nombre)}»`
+        : `>${esc(c.nombre)}<small>${esc([c.rut, c.comuna].filter(Boolean).join(" · "))}</small>`}</li>`).join("")
       : `<li class="vacio-combo">Sin resultados</li>`;
     if (activo >= 0) input.setAttribute("aria-activedescendant", `${input.id}-op${activo}`); else input.removeAttribute("aria-activedescendant");
     lista.hidden = false; input.setAttribute("aria-expanded", "true");
   };
   const elegir = (c) => {
+    if (c.nuevo) { cerrar(); return clienteNuevo(input, c.nombre); }
     input.value = c.nombre; input.dataset.id = c.id || ""; input.dataset.rut = c.id ? "" : c.rut;
     cerrar(); input.dispatchEvent(new Event("change", { bubbles: true }));
   };
@@ -250,7 +252,7 @@ export function activarCampoCliente(input, { local } = {}) {
         const { data, error } = await sb.rpc("buscar_clientes", { p_empresa: H.empresa.id, p_texto: q });
         if (n !== pedido) return; // llegó la respuesta de una búsqueda anterior
         if (error) return aviso(msgError(error), true);
-        items = data;
+        items = [...data, { nuevo: true, nombre: q }]; // siempre se puede crear uno nuevo (ej. Instalación)
       }
       activo = -1; pintar();
     }, 200);
@@ -270,6 +272,47 @@ export function activarCampoCliente(input, { local } = {}) {
   });
   input.addEventListener("blur", () => setTimeout(cerrar, 150));
 }
+// Cliente nuevo: con RUT válido o, si no se consigue, sin RUT (queda URGENTE en la campanita hasta completarlo)
+let dlgNuevo = null;
+function clienteNuevo(input, nombre) {
+  if (!dlgNuevo) {
+    document.body.insertAdjacentHTML("beforeend", `<dialog id="dlg-cliente-nuevo"><form method="dialog" novalidate>
+      <h2>Cliente nuevo</h2>
+      <label for="cn-nombre" class="req">Nombre</label><input id="cn-nombre" maxlength="120" autocomplete="off">
+      <label for="cn-rut" class="req">RUT</label><input id="cn-rut" placeholder="12.345.678-9" autocomplete="off">
+      <div class="checks" style="margin-top:10px"><label><input type="checkbox" id="cn-sin-rut">
+        No tengo el RUT: guardar solo con el nombre (queda como URGENTE en la campanita para completarlo después)</label></div>
+      <div class="pie"><button type="button" id="cn-cancelar">Cancelar</button><button class="primary" type="submit">Crear cliente</button></div>
+    </form></dialog>`);
+    dlgNuevo = $("#dlg-cliente-nuevo");
+    $("#cn-sin-rut").onchange = (ev) => { $("#cn-rut").disabled = ev.target.checked; };
+    $("#cn-cancelar").onclick = () => dlgNuevo.close();
+    dlgNuevo.querySelector("form").onsubmit = async (ev) => {
+      ev.preventDefault();
+      const n = $("#cn-nombre").value.trim(), sinRut = $("#cn-sin-rut").checked;
+      if (!n) { $("#cn-nombre").focus(); return aviso("Escribe el nombre del cliente.", true); }
+      const rut = sinRut ? null : normalizarRut($("#cn-rut").value);
+      if (!sinRut && !rut) {
+        $("#cn-rut").focus();
+        return aviso("El RUT no es válido. Si no lo tienes, marca “No tengo el RUT”.", true);
+      }
+      const { data, error } = await sb.rpc("crear_cliente", { p_empresa: H.empresa.id, p_nombre: n, p_rut: rut });
+      if (error) return aviso(msgError(error), true);
+      olvidarClientes();
+      const campo = dlgNuevo.campo;
+      campo.value = n; campo.dataset.id = data; campo.dataset.rut = "";
+      dlgNuevo.close();
+      campo.dispatchEvent(new Event("change", { bubbles: true }));
+      if (sinRut) document.dispatchEvent(new Event("horus-avisos")); // la campanita lo cuenta
+      aviso(sinRut ? "Cliente creado sin RUT: quedó como urgente en la campanita." : "Cliente creado.");
+    };
+  }
+  dlgNuevo.campo = input;
+  $("#cn-nombre").value = nombre; $("#cn-rut").value = ""; $("#cn-rut").disabled = false; $("#cn-sin-rut").checked = false;
+  dlgNuevo.showModal();
+  $("#cn-rut").focus();
+}
+
 // Id del cliente elegido (crea el cliente si vino de RUT Clientes). null = campo vacío; undefined = error (ya avisado).
 export async function clienteElegido(input) {
   if (input.dataset.id) return input.dataset.id;

@@ -163,18 +163,19 @@ $("#empresas-app").addEventListener("click", (ev) => {
   if (location.hash === destino) router(); else location.hash = destino;
 });
 
-// Campanita: visitas del calendario atrasadas o de los próximos 7 días (personal con el módulo Servicios)
+// Campanita: clientes sin RUT (urgentes) y visitas del calendario atrasadas o de los próximos 7 días
 async function pintarAvisos() {
   const b = $("#btn-avisos");
-  b.hidden = !(esStaff() && moduloActivo("servicios"));
+  b.hidden = !esStaff();
   if (b.hidden) return;
   const n = await calendario.contarAvisos();
   $("#avisos-n").textContent = n > 99 ? "99+" : n;
   $("#avisos-n").hidden = !n;
-  b.title = n ? `${n} visita${n === 1 ? "" : "s"} atrasada${n === 1 ? "" : "s"} o en los próximos ${calendario.AVISO_DIAS} días` : "Sin visitas próximas";
+  b.title = n ? `${n} aviso${n === 1 ? "" : "s"}: clientes sin RUT o visitas próximas` : "Sin avisos";
   b.setAttribute("aria-label", b.title);
 }
-$("#btn-avisos").addEventListener("click", () => (location.hash = "#/servicios/calendario"));
+$("#btn-avisos").addEventListener("click", () => (location.hash = "#/avisos"));
+document.addEventListener("horus-avisos", () => { calendario.olvidarAvisos(); pintarAvisos(); });
 
 // Foto de perfil (bucket privado: URL firmada, guardada mientras no cambie la foto)
 let fotoUrl = { ruta: null, url: null };
