@@ -14,15 +14,16 @@ export const AVISO_DIAS = 7;
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const DIAS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
 
-// Fecha + N semanas o meses, como en la base de datos (31-ene + 1 mes = 28-feb)
+// Fecha + N días, semanas o meses, como en la base de datos (31-ene + 1 mes = 28-feb)
 export function sumar(iso, cada, unidad) {
   const [y, m, d] = iso.split("-").map(Number);
-  if (unidad === "semanas") return new Date(Date.UTC(y, m - 1, d + 7 * cada)).toISOString().slice(0, 10);
+  if (unidad !== "meses") return new Date(Date.UTC(y, m - 1, d + (unidad === "semanas" ? 7 : 1) * cada)).toISOString().slice(0, 10);
   const ultimoDia = new Date(Date.UTC(y, m - 1 + cada + 1, 0)).getUTCDate();
   return new Date(Date.UTC(y, m - 1 + cada, Math.min(d, ultimoDia))).toISOString().slice(0, 10);
 }
 const diasHasta = (iso) => Math.round((Date.parse(iso) - Date.parse(hoy())) / 86400000);
-const cadaTxt = (p) => `cada ${p.cada === 1 ? "" : p.cada + " "}${p.cada === 1 ? (p.unidad === "meses" ? "mes" : "semana") : p.unidad}`;
+const UNIDAD = { dias: ["día", "días"], semanas: ["semana", "semanas"], meses: ["mes", "meses"] };
+const cadaTxt = (p) => (p.cada === 1 ? `cada ${UNIDAD[p.unidad][0]}` : `cada ${p.cada} ${UNIDAD[p.unidad][1]}`);
 const cuando = (p) => {
   const n = diasHasta(p.proxima);
   return n < 0 ? `<span class="chip mal">Atrasada ${-n} día${n === -1 ? "" : "s"}</span>`
@@ -71,8 +72,8 @@ async function calendario() {
       <label for="pl-tipo" class="req">Servicio</label>
       <select id="pl-tipo">${tipos.map((t) => `<option>${esc(t)}</option>`).join("")}</select>
       <div class="grid2">
-        <div><label for="pl-cada" class="req">Cada</label><input id="pl-cada" type="number" min="1" max="104" step="1" value="2" inputmode="numeric"></div>
-        <div><label for="pl-unidad">&nbsp;</label><select id="pl-unidad"><option value="meses">meses</option><option value="semanas">semanas</option></select></div>
+        <div><label for="pl-cada" class="req">Cada</label><input id="pl-cada" type="number" min="1" max="365" step="1" value="2" inputmode="numeric"></div>
+        <div><label for="pl-unidad">&nbsp;</label><select id="pl-unidad"><option value="meses">meses</option><option value="semanas">semanas</option><option value="dias">días</option></select></div>
       </div>
       <label for="pl-inicio" class="req">Primera visita</label><input id="pl-inicio" type="date">
       <p class="muted small" style="margin:4px 0 0">Si el cliente ya tiene este servicio registrado, la próxima visita se cuenta desde el último.</p>
@@ -153,7 +154,7 @@ async function calendario() {
     if (cliente_id === undefined) return;
     if (!cliente_id) return aviso("Elige el cliente.", true);
     const cada = Number($("#pl-cada").value);
-    if (!Number.isInteger(cada) || cada < 1 || cada > 104) return aviso("“Cada” debe ser un número entre 1 y 104.", true);
+    if (!Number.isInteger(cada) || cada < 1 || cada > 365) return aviso("“Cada” debe ser un número entre 1 y 365.", true);
     if (!$("#pl-inicio").value) return aviso("Indica la primera visita.", true);
     const datosPlan = { cliente_id, tipo: $("#pl-tipo").value, cada, unidad: $("#pl-unidad").value,
       inicio: $("#pl-inicio").value, notas: $("#pl-notas").value.trim() || null };

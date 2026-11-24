@@ -1793,6 +1793,11 @@ create table if not exists planes_visita (
   creado_en   timestamptz not null default now()
 );
 create index if not exists planes_visita_idx on planes_visita (empresa_id, cliente_id);
+-- También cada N días (hasta 365)
+alter table planes_visita drop constraint if exists planes_visita_unidad_check;
+alter table planes_visita add constraint planes_visita_unidad_check check (unidad in ('dias','semanas','meses'));
+alter table planes_visita drop constraint if exists planes_visita_cada_check;
+alter table planes_visita add constraint planes_visita_cada_check check (cada between 1 and 365);
 
 drop trigger if exists cliente_empresa on planes_visita;
 create trigger cliente_empresa before insert or update on planes_visita for each row execute function cliente_de_la_empresa();
@@ -1811,7 +1816,8 @@ returns table (id uuid, cliente_id uuid, cliente text, tipo text, cada integer, 
                activo boolean, ultima date, proxima date)
 language sql stable set search_path = public as $$
   select p.id, p.cliente_id, c.nombre, p.tipo, p.cada, p.unidad, p.inicio, p.notas, p.activo, u.ultima,
-         greatest((u.ultima + case p.unidad when 'semanas' then make_interval(weeks => p.cada)
+         greatest((u.ultima + case p.unidad when 'dias' then make_interval(days => p.cada)
+                                            when 'semanas' then make_interval(weeks => p.cada)
                                             else make_interval(months => p.cada) end)::date, p.inicio)
     from planes_visita p
     join clientes c on c.id = p.cliente_id

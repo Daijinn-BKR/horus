@@ -71,7 +71,7 @@ Las apps originales quedaron sin cambios en `legado/` como referencia (esa carpe
   la sanitización y cuántos estanques se hicieron: se **descuentan de los estanques pendientes**. Si se edita o se
   borra el servicio, la cuenta se corrige sola (mientras la sanitización siga coordinada).
 - **Calendario de visitas** (Servicios → Calendario): planes para clientes frecuentes (ej. Santo Tomás, desratización
-  cada 2 meses). La próxima visita se calcula desde el último servicio de ese tipo al cliente. Lo arman el supervisor y el
+  cada 2 meses; también cada N semanas o días). La próxima visita se calcula desde el último servicio de ese tipo al cliente. Lo arman el supervisor y el
   admin; todos lo ven. La **campanita** de arriba muestra cuántas visitas están atrasadas o vienen en los próximos 7 días.
 - **Sanitización de estanques** (Lafken): solo la ven y usan el supervisor y el admin. Tres pestañas. **Cotizado**:
   dónde, cliente y cuántos estanques. Cuando se aprueba, se pasa a **Coordinado**, donde se anota quién va, cuándo y

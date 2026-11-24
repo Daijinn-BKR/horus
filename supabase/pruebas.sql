@@ -342,7 +342,12 @@ do $$ declare p date; begin
   if p <> '2026-05-01' then raise exception 'FALLA: próxima desratización % (esperado 2026-05-01: último servicio 1-mar + 2 meses)', p; end if;
   p := (select proxima from proximas_visitas('lafken') where tipo = 'Desinsectación');
   if p <> '2026-07-01' then raise exception 'FALLA: sin servicios previos la próxima debe ser el inicio, fue %', p; end if;
-  raise notice 'OK: calendario calcula la próxima visita';
+  insert into planes_visita (empresa_id, cliente_id, tipo, cada, unidad, inicio)
+  values ('lafken', '00000000-0000-0000-0000-0000000000c3', 'Desinfección', 15, 'dias', '2026-01-01');
+  insert into servicios (empresa_id, cliente_id, fecha, tipos) values ('lafken', '00000000-0000-0000-0000-0000000000c3', '2026-02-20', '{Desinfección}');
+  p := (select proxima from proximas_visitas('lafken') where tipo = 'Desinfección');
+  if p <> '2026-03-07' then raise exception 'FALLA: cada 15 días desde 20-feb debió dar 2026-03-07, dio %', p; end if;
+  raise notice 'OK: calendario calcula la próxima visita (meses y días)';
 end $$;
 reset role;
 
