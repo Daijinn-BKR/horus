@@ -154,7 +154,7 @@ bash instalar.sh
 ```
 
 ## Sala de bombas
-1. En Horus → Administración → Sala de bombas: **Agregar módulo** (ID = `DEVICE_ID`, ej. `sala-bombas-01`), asígnale el cliente y define la **Clave ESP32**.
+1. En Horus → Administración → Sala de bombas: **Agregar módulo** (ID = `DEVICE_ID`, ej. `sala-bombas-01`), asígnale el cliente y toca **Clave ESP32**: Horus genera una clave al azar y la muestra una vez para copiarla en `DEVICE_KEY` del `config.h`.
 2. **Datos simulados** (sin hardware):
    ```bash
    cd sala-bombas

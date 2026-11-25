@@ -315,13 +315,19 @@ async function formulario(id) {
     else { r = await sb.from("ordenes_trabajo").insert({ ...fila, empresa_id: H.empresa.id }).select("id").single(); oid = r.data?.id; }
     if (r.error) { btn.disabled = false; return aviso("Error al guardar: " + msgError(r.error), true); }
     const quitar = o.ops.filter((x) => !ops.includes(x)), agregar = ops.filter((x) => !o.ops.includes(x));
+    // La orden ya quedó guardada: si falla el personal, se sigue en "editar" (reintentar aquí crearía otra orden)
+    const fallo = (txt, e) => {
+      btn.disabled = false;
+      aviso(txt + msgError(e), true);
+      if (!id) location.hash = `#/ordenes/${oid}/editar`;
+    };
     if (quitar.length) {
       const d = await sb.from("orden_personal").delete().eq("orden_id", oid).in("personal_id", quitar);
-      if (d.error) { btn.disabled = false; return aviso("Error al quitar personal: " + msgError(d.error), true); }
+      if (d.error) return fallo("Error al quitar personal: ", d.error);
     }
     if (agregar.length) {
       const i = await sb.from("orden_personal").insert(agregar.map((personal_id) => ({ orden_id: oid, personal_id })));
-      if (i.error) { btn.disabled = false; return aviso("Error al asignar personal: " + msgError(i.error), true); }
+      if (i.error) return fallo("Orden guardada, pero no se pudo asignar el personal: ", i.error);
     }
     aviso(id ? "Cambios guardados." : "Orden creada.");
     location.hash = "#/ordenes/" + oid;

@@ -219,7 +219,8 @@ export function campoCliente(id, cliente = null) {
     role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="${id}-lista">
     <ul class="combo-lista" id="${id}-lista" role="listbox" hidden></ul></div>`;
 }
-const sinTildes = (t) => String(t ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+// Texto sin tildes, en minúsculas y sin espacios en los extremos (para buscar: "valvula" encuentra "VÁLVULA")
+export const normal = (t) => String(t ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 // local(): lista propia en la que buscar (ej. solo clientes con sanitización coordinada); si devuelve null, busca en la base
 export function activarCampoCliente(input, { local } = {}) {
   const lista = input.nextElementSibling;
@@ -247,7 +248,7 @@ export function activarCampoCliente(input, { local } = {}) {
     if (!q) { items = []; cerrar(); return; }
     t = setTimeout(async () => {
       const propia = local?.();
-      if (propia) items = propia.filter((c) => sinTildes(`${c.nombre} ${c.rut || ""}`).includes(sinTildes(q))).slice(0, 15);
+      if (propia) items = propia.filter((c) => normal(`${c.nombre} ${c.rut || ""}`).includes(normal(q))).slice(0, 15);
       else {
         const { data, error } = await sb.rpc("buscar_clientes", { p_empresa: H.empresa.id, p_texto: q });
         if (n !== pedido) return; // llegó la respuesta de una búsqueda anterior

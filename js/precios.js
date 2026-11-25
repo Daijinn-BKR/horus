@@ -1,6 +1,6 @@
 // Horus · Lista de precios: solo lectura para todos. El admin carga una lista por mes desde Excel.
-import { sb, H, $, esc, aviso, msgError, vista, cargando, nf, esAdmin, descargarCSV } from "./nucleo.js";
-import { leerArchivo, separarEncabezado, aNumero, normal, mesDeNombre } from "./excel.js";
+import { sb, H, $, esc, aviso, msgError, vista, cargando, nf, esAdmin, descargarCSV, normal } from "./nucleo.js";
+import { leerArchivo, separarEncabezado, aNumero, mesDeNombre } from "./excel.js";
 
 export const rutas = [
   { patron: /^#\/precios$/, modulo: "precios", acceso: "staff", render: () => lista() },

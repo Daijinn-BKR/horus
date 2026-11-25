@@ -375,5 +375,62 @@ do $$ declare a uuid; b uuid; ok boolean := false; begin
 end $$;
 reset role;
 
+-- ---------- Ficha pública (QR): sin sesión solo se ven los datos limitados ----------
+select set_config('request.jwt.claim.sub', '', true);
+set local role anon;
+do $$ declare f jsonb := ficha_publica('eqomega1'); begin
+  if f is null then raise exception 'FALLA: la ficha pública no devolvió el equipo'; end if;
+  if (select array_agg(k order by k) from jsonb_object_keys(f) k) is distinct from
+     array['actualizado_en','cliente','creado_en','empresa','estado','id','tipo_mantenimiento','tipo_motor','tipo_voltaje'] then
+    raise exception 'FALLA: la ficha pública muestra otros campos: %', f;
+  end if;
+  raise notice 'OK: la ficha pública solo muestra los datos limitados';
+end $$;
+reset role;
+
+-- ---------- Órdenes de trabajo: el estado solo cambia con ot_iniciar / ot_terminar / ot_verificar ----------
+-- El operario de Omega pasa a ser personal asignado; el usuario de Lafken pasa a jefe de Omega
+update perfiles set rol = 'jefe', empresa_id = 'omega' where id = '00000000-0000-0000-0000-00000000000b';
+insert into personal (id, empresa_id, nombre, usuario_id) values
+  ('00000000-0000-0000-0000-0000000000e9', 'omega', 'Operario Omega', '00000000-0000-0000-0000-00000000000c');
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', true);
+set local role authenticated;
+do $$ declare v uuid; begin
+  insert into ordenes_trabajo (id, empresa_id, titulo, estado)
+  values ('00000000-0000-0000-0000-0000000000a1', 'omega', 'Cambiar tablero', 'Verificada') returning id into v;
+  if (select estado from ordenes_trabajo where id = v) <> 'Asignada' then raise exception 'FALLA: la orden nueva no partió en Asignada'; end if;
+  insert into orden_personal (orden_id, personal_id) values (v, '00000000-0000-0000-0000-0000000000e9');
+end $$;
+reset role;
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000c', true);
+set local role authenticated;
+do $$ declare v uuid := '00000000-0000-0000-0000-0000000000a1'; n int; ok boolean := false; begin
+  update ordenes_trabajo set estado = 'Verificada' where id = v;   -- el operario no es jefe: la política no lo deja
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'FALLA: el operario cambió el estado con un update directo'; end if;
+  perform ot_iniciar(v);
+  perform ot_terminar(v, 'Tablero cambiado');
+  begin perform ot_verificar(v, true); exception when others then ok := sqlerrm like '%Solo el jefe%'; end;
+  if not ok then raise exception 'FALLA: el operario verificó su propia orden'; end if;
+  if (select estado from ordenes_trabajo where id = v) <> 'Terminada' then raise exception 'FALLA: la orden no quedó Terminada'; end if;
+end $$;
+reset role;
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', true);
+set local role authenticated;
+do $$ declare v uuid := '00000000-0000-0000-0000-0000000000a1'; ok boolean := false; begin
+  begin update ordenes_trabajo set estado = 'Verificada' where id = v;
+  exception when others then ok := sqlerrm like '%se cambia con los botones%'; end;
+  if not ok then raise exception 'FALLA: el jefe cambió el estado sin ot_verificar'; end if;
+  perform ot_verificar(v, false, 'Falta la foto');
+  if (select (estado, devoluciones) from ordenes_trabajo where id = v) is distinct from ('En curso'::text, 1) then
+    raise exception 'FALLA: devolver la orden no la dejó En curso';
+  end if;
+  raise notice 'OK: órdenes de trabajo solo avanzan con sus funciones y solo el jefe verifica';
+end $$;
+reset role;
+
 rollback;
 \echo 'Todas las pruebas pasaron.'

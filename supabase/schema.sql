@@ -557,7 +557,8 @@ returns jsonb language plpgsql security definer set search_path = public, extens
 declare
   d dispositivos; h text; l lecturas; u jsonb;
 begin
-  select * into d from dispositivos where id = p_dispositivo and activo;
+  -- for update: los pedidos en paralelo esperan en fila y ven la ultima_lectura nueva (si no, se salta el límite de 5 s)
+  select * into d from dispositivos where id = p_dispositivo and activo for update;
   select clave_hash into h from dispositivo_claves where dispositivo_id = p_dispositivo;
   if d.id is null or h is null or crypt(coalesce(p_clave, ''), h) <> h then
     raise exception 'Dispositivo o clave inválidos' using errcode = '28000';

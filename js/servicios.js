@@ -83,9 +83,12 @@ async function lista() {
     $$("#lista [data-del]").forEach((b) => (b.onclick = async () => {
       if (!confirm("¿Eliminar este servicio? No se puede deshacer.")) return;
       const foto = datos.find((x) => x.id === b.dataset.del)?.foto;
-      if (foto) await sb.storage.from("servicios").remove([foto]);
       const { error: e } = await sb.from("servicios").delete().eq("id", b.dataset.del);
-      if (e) aviso(msgError(e), true); else aviso("Servicio eliminado.");
+      if (e) aviso(msgError(e), true);
+      else {
+        if (foto) await sb.storage.from("servicios").remove([foto]); // la foto solo se borra si el servicio ya no existe
+        aviso("Servicio eliminado.");
+      }
       cargar();
     }));
   };

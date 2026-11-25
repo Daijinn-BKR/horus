@@ -2,10 +2,10 @@
 import {
   sb, H, MODULOS, ROLES, ROLES_EMPRESA, PERMISOS, $, $$, esc, aviso, msgError, vista, cargando, fmtHora, fecha,
   clientesEmpresa, olvidarClientes, normalizarRut, normalizarTelefono, validarCampo, msgCarga, nf,
-  cargarScript, SCRIPTS, descargarCSV,
+  cargarScript, SCRIPTS, descargarCSV, normal,
 } from "./nucleo.js";
 import { leerFactura } from "./facturas.js";
-import { leerArchivo, separarEncabezado, normal } from "./excel.js";
+import { leerArchivo, separarEncabezado } from "./excel.js";
 
 export const rutas = [
   { patron: /^#\/admin$/, acceso: "admin", render: () => menu() },
@@ -637,11 +637,12 @@ async function dispositivos() {
     dispositivos();
   };
   $$("[data-clave]", v).forEach((b) => (b.onclick = async () => {
-    const clave = prompt(`Clave para el módulo "${b.dataset.clave}" (mínimo 8 caracteres).\nDebe ser la misma que pongas en API_KEY del config.h del ESP32:`);
-    if (!clave) return;
+    // Clave al azar (122 bits): una clave inventada a mano se puede adivinar probando, sin límite de intentos
+    if (!confirm(`¿Generar una clave nueva para el módulo "${b.dataset.clave}"? La anterior deja de funcionar.`)) return;
+    const clave = crypto.randomUUID();
     const { error } = await sb.rpc("fijar_clave_dispositivo", { p_dispositivo: b.dataset.clave, p_clave: clave });
     if (error) return aviso(msgError(error), true);
-    aviso("Clave guardada. Cópiala en el config.h del ESP32.");
+    prompt("Clave guardada. Cópiala en DEVICE_KEY del config.h del ESP32 (no se vuelve a mostrar):", clave);
   }));
   $$("[data-del]", v).forEach((b) => (b.onclick = async () => {
     if (!confirm(`¿Eliminar el módulo "${b.dataset.del}" con TODAS sus lecturas y eventos? No se puede deshacer.`)) return;

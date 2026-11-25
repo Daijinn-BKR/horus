@@ -1,7 +1,7 @@
 // Horus · Buscador de Excel (solo administradores)
 // Los archivos se leen en este navegador y viven solo en memoria: no se suben a ningún
 // servidor, no se guardan en el equipo y se olvidan al salir de la pantalla.
-import { $, $$, esc, aviso, vista, nf, cargarScript, SCRIPTS, descargarCSV, alSalirDeVista } from "./nucleo.js";
+import { $, $$, esc, aviso, vista, nf, cargarScript, SCRIPTS, descargarCSV, alSalirDeVista, normal } from "./nucleo.js";
 
 export const rutas = [
   { patron: /^#\/admin\/excel$/, acceso: "admin", render: () => buscador() },
@@ -12,7 +12,6 @@ const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "O
 const MESES_LARGOS = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"];
 
 // ---------- Utilidades compartidas (también las usa Lista de precios) ----------
-export const normal = (t) => String(t ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 
 // Lee un archivo y devuelve sus hojas como matrices de celdas
 export async function leerArchivo(file) {
