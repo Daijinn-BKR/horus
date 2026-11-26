@@ -125,6 +125,7 @@ const ICONOS = {
   tema: svg('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'),
   nombre: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
   clave: svg('<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M16 7l3 3M18 5l2 2"/>'),
+  instalar: svg('<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/>'),
   salir: svg('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>'),
 };
 const icono = (ruta) => ICONOS[ruta] || ICONOS["#/pendientes"];
@@ -146,6 +147,7 @@ function pintarNav() {
          <button type="button" data-accion="tema">${ICONOS.tema}<span>Modo claro / oscuro</span></button>
          <button type="button" data-accion="nombre">${ICONOS.nombre}<span>Cambiar mi nombre</span></button>
          <button type="button" data-accion="clave">${ICONOS.clave}<span>Cambiar mi contraseña</span></button>
+         <button type="button" data-accion="instalar"${pedidoInstalar ? "" : " hidden"}>${ICONOS.instalar}<span>Instalar app</span></button>
          <button type="button" data-accion="salir">${ICONOS.salir}<span>Salir</span></button>
        </div>`;
 
@@ -220,6 +222,7 @@ $("#nav").addEventListener("click", (ev) => {
   if (accion === "tema") document.querySelector("#app .btn-tema").click();
   if (accion === "nombre") $("#btn-mi-nombre").click();
   if (accion === "clave") $("#btn-mi-clave").click();
+  if (accion === "instalar") $("#btn-instalar").click();
   if (accion === "salir") $("#btn-salir").click();
 });
 document.addEventListener("horus-avisos", () => { calendario.olvidarAvisos(); pintarAvisos(); });
@@ -379,16 +382,19 @@ let pedidoInstalar = null;
 window.addEventListener("beforeinstallprompt", (ev) => {
   ev.preventDefault();
   pedidoInstalar = ev;
-  $("#btn-instalar").hidden = false;
+  verInstalar(true);
 });
 $("#btn-instalar").addEventListener("click", async () => {
   if (!pedidoInstalar) return;
   pedidoInstalar.prompt();
   await pedidoInstalar.userChoice;
   pedidoInstalar = null;
-  $("#btn-instalar").hidden = true;
+  verInstalar(false);
 });
-window.addEventListener("appinstalled", () => ($("#btn-instalar").hidden = true));
+window.addEventListener("appinstalled", () => verInstalar(false));
+function verInstalar(ver) {
+  document.querySelectorAll('#btn-instalar, #nav [data-accion="instalar"]').forEach((b) => (b.hidden = !ver));
+}
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }

@@ -411,6 +411,7 @@ nav.modulos a svg, nav.modulos button svg { display: none; }
   nav.modulos.abierto .nav-hoja { display: flex; }
   .nav-hoja a, .nav-hoja button { display: flex; flex-direction: row; align-items: center; gap: 12px; justify-content: flex-start; min-height: 48px;
     padding: 8px 12px; border: 0; border-radius: 10px; background: none; color: var(--text); text-decoration: none; font-size: 15px; width: 100%; }
+  .nav-hoja [hidden] { display: none; }
   .nav-hoja a.on { color: var(--accent); font-weight: 600; }
   .nav-hoja a:hover, .nav-hoja button:hover { background: var(--bg); }
   main { padding: 14px 14px 110px; }
