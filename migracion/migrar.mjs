@@ -9,6 +9,10 @@
 //   copia .env.example como .env y complétalo
 //   node migrar.mjs --prueba     ← solo cuenta lo que hay, no escribe nada
 //   node migrar.mjs              ← migra (se puede repetir: no duplica)
+//   node migrar.mjs --ids=6c9d0cd2c5,3f81a07b2e   ← solo esos equipos de Control Equipos
+//
+// Equipos que ya están en Horus NO se tocan (pudieron editarse en Horus): solo se agregan los que faltan.
+// Para migrar solo equipos, deja vacíos en .env los datos de Inventario y Lafken (esas partes se omiten).
 //
 // Las bases antiguas NO se modifican: solo se leen.
 import { createClient } from "@supabase/supabase-js";
@@ -24,6 +28,7 @@ if (existsSync(aqui("./.env"))) {
 }
 const env = process.env;
 const PRUEBA = process.argv.includes("--prueba");
+const SOLO_IDS = (process.argv.find((a) => a.startsWith("--ids="))?.slice(6) || "").split(",").map((x) => x.trim()).filter(Boolean);
 
 // URL y clave de las apps antiguas: se leen de legado/*/config.js (o del .env)
 function configVieja(carpeta, prefijo) {
@@ -114,9 +119,27 @@ if (lafken) {
 // ---------- 2. Control de Equipos ----------
 const equipos = await conectar("Control Equipos", ORIGEN.equipos);
 if (equipos) {
-  const [eq, fo, vi] = await Promise.all([
+  let [eq, fo, vi] = await Promise.all([
     leerTodo(equipos, "equipos"), leerTodo(equipos, "fotos_equipo"), leerTodo(equipos, "videos_equipo"),
   ]);
+  if (SOLO_IDS.length) {
+    const faltan = SOLO_IDS.filter((id) => !eq.some((e) => e.id === id));
+    if (faltan.length) console.log(`⚠ No están en Control Equipos: ${faltan.join(", ")}`);
+    eq = eq.filter((e) => SOLO_IDS.includes(e.id));
+  }
+  // Los que ya están en Horus no se vuelven a escribir (ni sus fotos y videos): se pudieron editar en Horus
+  const yaEstan = new Set();
+  for (let i = 0; i < eq.length; i += 200) {
+    const { data, error } = await nuevo.from("equipos").select("id").in("id", eq.slice(i, i + 200).map((e) => e.id));
+    if (error) throw new Error(`equipos (Horus): ${error.message}`);
+    data.forEach((x) => yaEstan.add(x.id));
+  }
+  const omitidos = eq.filter((e) => yaEstan.has(e.id)).length;
+  eq = eq.filter((e) => !yaEstan.has(e.id));
+  const nuevosIds = new Set(eq.map((e) => e.id));
+  fo = fo.filter((x) => nuevosIds.has(x.equipo_id));
+  vi = vi.filter((x) => nuevosIds.has(x.equipo_id));
+  if (PRUEBA) for (const e of eq) console.log(`  + ${e.id} · ${e.cliente || "sin cliente"} · ${e.tipo_motor || ""}`);
   const filas = [];
   for (const e of eq) {
     const { cliente, creado_por, ...resto } = e;
@@ -139,8 +162,8 @@ if (equipos) {
     }
   }
   const nCli = new Set(eq.map((e) => (e.cliente || "").trim().toLowerCase())).size;
-  resumen.push(`Control Equipos: ${eq.length} equipos (${nCli} clientes distintos), ${fo.length} fotos, ${vi.length} videos` +
-    (fallidos ? ` — ${fallidos} archivos fallaron` : ""));
+  resumen.push(`Control Equipos: ${eq.length} equipos nuevos (${nCli} clientes distintos), ${fo.length} fotos, ${vi.length} videos` +
+    (omitidos ? ` · ${omitidos} ya estaban en Horus y no se tocaron` : "") + (fallidos ? ` — ${fallidos} archivos fallaron` : ""));
 }
 
 // ---------- 3. Inventario ----------
