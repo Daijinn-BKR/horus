@@ -384,7 +384,20 @@ do $$ declare f jsonb := ficha_publica('eqomega1'); begin
      array['actualizado_en','cliente','creado_en','empresa','estado','id','tipo_mantenimiento','tipo_motor','tipo_voltaje'] then
     raise exception 'FALLA: la ficha pública muestra otros campos: %', f;
   end if;
+  if exists (select 1 from equipos) then raise exception 'FALLA: sin sesión se lee la tabla equipos (mediciones, componentes)'; end if;
   raise notice 'OK: la ficha pública solo muestra los datos limitados';
+end $$;
+reset role;
+-- El cliente tampoco ve mediciones ni componentes: solo los mismos datos limitados
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000d', true);
+set local role authenticated;
+do $$ declare f jsonb := (select x from mis_equipos() x limit 1); begin
+  if (select array_agg(k order by k) from jsonb_object_keys(f) k) is distinct from
+     array['actualizado_en','cliente','creado_en','empresa','estado','id','tipo_mantenimiento','tipo_motor','tipo_voltaje'] then
+    raise exception 'FALLA: mis_equipos() muestra otros campos al cliente: %', f;
+  end if;
+  if exists (select 1 from equipos) then raise exception 'FALLA: el cliente lee la tabla equipos (mediciones, componentes)'; end if;
+  raise notice 'OK: el cliente no ve mediciones ni componentes';
 end $$;
 reset role;
 
