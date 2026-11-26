@@ -140,10 +140,15 @@ if (equipos) {
   fo = fo.filter((x) => nuevosIds.has(x.equipo_id));
   vi = vi.filter((x) => nuevosIds.has(x.equipo_id));
   if (PRUEBA) for (const e of eq) console.log(`  + ${e.id} · ${e.cliente || "sin cliente"} · ${e.tipo_motor || ""}`);
+  // Solo las columnas que existen en Horus (la app antigua tiene otras, como "token", que aquí no se usan)
+  const COLUMNAS = ["id", "tipo_motor", "tipo_voltaje", "tipo_mantenimiento", "encargados", "t_u", "t_v", "t_w", "u_v", "u_w", "v_w",
+    "u_x", "v_y", "w_z", "rodamientos", "sello", "reten", "placa_bornera", "proceso", "notas", "estado", "creado_en", "actualizado_en"];
+  const otras = [...new Set(eq.flatMap((e) => Object.keys(e)))].filter((k) => !COLUMNAS.includes(k) && !["cliente", "creado_por", "empresa_id", "cliente_id"].includes(k));
+  if (otras.length) console.log(`  (columnas de Control Equipos que no se copian: ${otras.join(", ")})`);
   const filas = [];
   for (const e of eq) {
-    const { cliente, creado_por, ...resto } = e;
-    filas.push({ ...resto, empresa_id: "omega", cliente_id: await clienteId("omega", cliente), creado_por: null });
+    const fila = Object.fromEntries(COLUMNAS.filter((k) => k in e).map((k) => [k, e[k]]));
+    filas.push({ ...fila, empresa_id: "omega", cliente_id: await clienteId("omega", e.cliente), creado_por: null });
   }
   await escribir("equipos", filas, "id"); // conserva las fechas originales de creación y modificación
   let archivos = 0, fallidos = 0;
