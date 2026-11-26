@@ -108,15 +108,46 @@ async function router() {
 window.addEventListener("hashchange", router);
 
 // ---------- Navegación ----------
+// Íconos del menú (se ven en el celular, en la barra de abajo)
+const svg = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+const ICONOS = {
+  "#/equipos": svg('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>'),
+  "#/inventario": svg('<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/>'),
+  "#/servicios": svg('<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 12l2 2 4-4"/>'),
+  "#/sala": svg('<path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/>'),
+  "#/bobinado": svg('<circle cx="12" cy="12" r="8"/><path d="M12 8a4 4 0 1 1-4 4"/>'),
+  "#/precios": svg('<path d="M20 13l-7 7-9-9V4h7z"/><circle cx="8.5" cy="8.5" r="1.5"/>'),
+  "#/ordenes": svg('<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>'),
+  "#/pendientes": svg('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>'),
+  "#/sanitizacion": svg('<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>'),
+  "#/admin": svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+  mas: svg('<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'),
+  tema: svg('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'),
+  nombre: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
+  clave: svg('<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M16 7l3 3M18 5l2 2"/>'),
+  salir: svg('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>'),
+};
+const icono = (ruta) => ICONOS[ruta] || ICONOS["#/pendientes"];
+
 function pintarNav() {
   const h = location.hash;
   const links = modulosVisibles().map((m) => [MODULOS[m].ruta, MODULOS[m].titulo]);
   if (esAdmin()) links.push(["#/admin", "Administración"]);
-  $("#nav").innerHTML = links.map(([ruta, t]) => {
-    const on = h === ruta || h.startsWith(ruta + "/") ||
-      (ruta === "#/equipos" && h === "#/escanear");
-    return `<a href="${ruta}" class="${on ? "on" : ""}">${esc(t)}</a>`;
-  }).join("");
+  // En el computador se ven todos; en el celular, los 3 primeros abajo y el resto en "Más"
+  const enlace = ([ruta, t], i, clase = "") => {
+    const on = h === ruta || h.startsWith(ruta + "/") || (ruta === "#/equipos" && h === "#/escanear");
+    return `<a href="${ruta}" class="${[on ? "on" : "", clase, i >= 3 ? "extra" : ""].join(" ").trim()}"${on ? ' aria-current="page"' : ""}>${icono(ruta)}<span>${esc(t)}</span></a>`;
+  };
+  const extras = links.slice(3);
+  $("#nav").innerHTML = links.map((l, i) => enlace(l, i)).join("")
+    + `<button type="button" class="nav-mas" aria-expanded="false" aria-controls="nav-hoja">${ICONOS.mas}<span>Más</span></button>
+       <div class="nav-hoja" id="nav-hoja">
+         ${extras.map((l) => enlace(l, 0, "en-hoja")).join("")}
+         <button type="button" data-accion="tema">${ICONOS.tema}<span>Modo claro / oscuro</span></button>
+         <button type="button" data-accion="nombre">${ICONOS.nombre}<span>Cambiar mi nombre</span></button>
+         <button type="button" data-accion="clave">${ICONOS.clave}<span>Cambiar mi contraseña</span></button>
+         <button type="button" data-accion="salir">${ICONOS.salir}<span>Salir</span></button>
+       </div>`;
 
   pintarEmpresas();
   const p = H.perfil;
@@ -175,6 +206,22 @@ async function pintarAvisos() {
   b.setAttribute("aria-label", b.title);
 }
 $("#btn-avisos").addEventListener("click", () => (location.hash = "#/avisos"));
+
+// Menú "Más" del celular: abre la hoja con el resto de los módulos y las acciones de la cuenta
+$("#nav").addEventListener("click", (ev) => {
+  const nav = $("#nav");
+  if (ev.target.closest(".nav-mas")) {
+    const abierto = nav.classList.toggle("abierto");
+    ev.target.closest(".nav-mas").setAttribute("aria-expanded", abierto);
+    return;
+  }
+  const accion = ev.target.closest("[data-accion]")?.dataset.accion;
+  if (ev.target.closest("a") || accion) nav.classList.remove("abierto");
+  if (accion === "tema") document.querySelector("#app .btn-tema").click();
+  if (accion === "nombre") $("#btn-mi-nombre").click();
+  if (accion === "clave") $("#btn-mi-clave").click();
+  if (accion === "salir") $("#btn-salir").click();
+});
 document.addEventListener("horus-avisos", () => { calendario.olvidarAvisos(); pintarAvisos(); });
 
 // Foto de perfil (bucket privado: URL firmada, guardada mientras no cambie la foto)

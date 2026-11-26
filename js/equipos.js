@@ -85,10 +85,15 @@ async function lista() {
         .some((v) => String(v ?? "").toLowerCase().includes(q))));
     $("#conteo").textContent = `${l.length} de ${equipos.length} equipos`;
     $("#lista").innerHTML = l.length ? l.map((e) => `
-      <a class="tarjeta" href="#/equipos/${encodeURIComponent(e.id)}">
-        <div class="t-top"><strong>${esc(nombreCliente(e))}</strong>${chipEstado(e.estado)}</div>
-        <div class="muted">${esc(e.tipo_motor || "")}${e.tipo_voltaje ? " · " + esc(e.tipo_voltaje) : ""}</div>
-        <div class="muted small">ID ${esc(e.id)} · ${fecha(e.creado_en)}${e.encargados ? " · " + esc(e.encargados) : ""}</div>
+      <a class="tarjeta ficha-equipo" href="#/equipos/${encodeURIComponent(e.id)}">
+        <div class="t-top"><span class="muted small">ID ${esc(e.id)}</span>${chipEstado(e.estado)}</div>
+        <strong class="t-nombre">${esc(nombreCliente(e))}</strong>
+        <dl class="t-datos">
+          <div><dt>Equipo</dt><dd>${esc(e.tipo_motor || "—")}</dd></div>
+          <div><dt>Voltaje</dt><dd>${esc(e.tipo_voltaje || "—")}</dd></div>
+          <div><dt>Ingreso</dt><dd>${fecha(e.creado_en)}</dd></div>
+          <div><dt>Encargado</dt><dd>${esc(e.encargados || "—")}</dd></div>
+        </dl>
       </a>`).join("")
       : `<p class="vacio">${equipos.length ? "No hay equipos que coincidan." : "Todavía no hay equipos. Toca “+ Nuevo equipo”."}</p>`;
   };

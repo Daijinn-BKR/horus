@@ -91,6 +91,10 @@ Las apps originales quedaron sin cambios en `legado/` como referencia (esa carpe
   entrar (así el admin no queda sabiendo la contraseña de nadie).
 - Los permisos los aplica la base de datos (Row Level Security), no solo la pantalla: aunque alguien modifique la página, no puede ver ni tocar lo que no le corresponde.
 
+**Aspecto**: en el computador, barra superior con el color de la empresa y pestañas, y las listas en cuadrícula; en el
+celular, menú abajo (los 3 primeros módulos y **Más**, donde están el resto, el tema, el nombre, la contraseña y Salir)
+y un botón flotante **+ Nuevo…**.
+
 ## Puesta en marcha
 
 ### 1. Base de datos
