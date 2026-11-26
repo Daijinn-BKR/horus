@@ -109,7 +109,7 @@ main.ancho { max-width: 1300px; }
 
 /* ---------- Componentes ---------- */
 .acciones { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
-.filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-bottom: 8px; }
 .filtros label { margin-top: 0; }
 .lista { display: grid; gap: 8px; margin-top: 8px; }
 .tarjeta { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
@@ -337,5 +337,7 @@ dl.totales dd { margin: 0; text-align: right; }
 .mini-avatar { width: 26px; height: 26px; border-radius: 50%; overflow: hidden; flex: none; display: inline-flex; align-items: center;
   justify-content: center; background: var(--accent); color: var(--accent-text); font-size: 12px; font-weight: 700; }
 .mini-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.fecha-filtro { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
-.fecha-filtro input { width: auto; }
+/* Filtros: la búsqueda ocupa su propia fila; Cliente, Desde, Hasta y Estado se reparten la de abajo */
+.filtros input[type=search] { grid-column: 1 / -1; }
+.fecha-filtro { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); white-space: nowrap; }
+.fecha-filtro input { flex: 1; min-width: 0; }
