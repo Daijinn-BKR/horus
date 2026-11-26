@@ -1,7 +1,7 @@
 // Horus · Servicios (registro de visitas: desratización, mantención, etc.)
 import {
   sb, H, $, $$, esc, aviso, msgError, vista, cargando, fecha, hoy, descargarCSV,
-  clientesEmpresa, campoCliente, activarCampoCliente, clienteElegido, opcionesServicio, esAdmin, esCliente,
+  clientesEmpresa, checksPersonal, fotosPersonal, campoCliente, activarCampoCliente, clienteElegido, opcionesServicio, esAdmin, esCliente,
 } from "./nucleo.js";
 import { subirMedios } from "./medios.js";
 import { olvidarAvisos } from "./calendario.js";
@@ -153,7 +153,7 @@ async function formulario(id, desde = null) {
       </div>
       <label class="req">Personal</label>
       <div class="checks" id="f-ops">
-        ${personal.map((o) => `<label><input type="checkbox" value="${o.id}"${marcados.includes(o.id) ? " checked" : ""}>${esc(o.nombre)}</label>`).join("")
+        ${checksPersonal(personal, marcados)
           || `<span class="muted small">No hay personal registrado. ${esAdmin() ? `<a href="#/admin/personal">Agregar personal</a>` : "Pide al administrador que lo agregue."}</span>`}
       </div>
       <label class="req">Tipo de servicio</label>
@@ -180,6 +180,7 @@ async function formulario(id, desde = null) {
   };
   pintarSan();
   // Con SEAP marcado, la búsqueda es solo entre los clientes con una sanitización coordinada
+  fotosPersonal($("#f-ops", v));
   activarCampoCliente($("#f-cliente", v), { local: () => (seapMarcado() ? clientes.filter((c) => coordinados.has(c.id)) : null) });
   $("#f-cliente", v).onchange = pintarSan;
   // CSI: se entrega con la última visita (visita N de N)

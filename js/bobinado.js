@@ -1,7 +1,7 @@
 // Horus · Bobinado: registro de motores rebobinados (solo admin y operarios con permiso)
 import {
-  sb, H, $, esc, dato, aviso, msgError, vista, cargando, fecha, hoy, nf, descargarCSV,
-  clientesEmpresa, campoCliente, activarCampoCliente, clienteElegido, esAdmin,
+  sb, H, $, $$, esc, dato, aviso, msgError, vista, cargando, fecha, hoy, nf, descargarCSV,
+  clientesEmpresa, checksPersonal, fotosPersonal, campoCliente, activarCampoCliente, clienteElegido, esAdmin,
 } from "./nucleo.js";
 
 export const rutas = [
@@ -61,7 +61,7 @@ async function lista() {
   const pintar = () => {
     const txt = $("#b-txt").value.trim().toLowerCase(), cli = $("#b-cli").value, est = $("#b-est").value;
     vistos = data.filter((b) => (!cli || b.cliente_id === cli) && (!est || b.estado === est) &&
-      (!txt || [b.marca, b.modelo, b.serie, b.clientes?.nombre, b.observaciones].join(" ").toLowerCase().includes(txt)));
+      (!txt || [b.marca, b.modelo, b.serie, b.clientes?.nombre, b.encargados, b.observaciones].join(" ").toLowerCase().includes(txt)));
     $("#conteo").textContent = `${vistos.length} de ${data.length} bobinado${data.length === 1 ? "" : "s"}`;
     $("#lista").innerHTML = vistos.length ? vistos.map((b) => `
       <a class="tarjeta" href="#/bobinado/${b.id}">
@@ -99,6 +99,7 @@ async function ficha(id) {
     </div>
     <div class="panel"><h2>Datos de placa</h2><dl class="datos">
       ${PLACA.map((c) => fila(c.n, valor(c))).join("")}${fila("Fases", b.fases ? (b.fases === 1 ? "Monofásico" : "Trifásico") : "")}
+      ${fila("Encargado/s", b.encargados)}
     </dl></div>
     <div class="panel"><h2>Bobinado</h2><dl class="datos">${BOBINA.map((c) => fila(c.n, valor(c))).join("") || "<dd class='muted'>Sin datos</dd>"}</dl></div>
     ${b.observaciones ? `<div class="panel"><h2>Observaciones</h2><p style="margin:0;white-space:pre-wrap">${esc(b.observaciones)}</p></div>` : ""}`);
@@ -121,7 +122,13 @@ async function formulario(id) {
     if (error || !data) return vista(`<a href="#/bobinado" class="volver">← Bobinado</a><p class="vacio">No se encontró el bobinado.</p>`);
     b = data;
   }
-  const clientes = await clientesEmpresa();
+  const [clientes, pers] = await Promise.all([
+    clientesEmpresa(),
+    sb.from("personal").select("*").eq("empresa_id", H.empresa.id).order("nombre"),
+  ]);
+  const yaEran = (b.encargados || "").split(",").map((x) => x.trim()).filter(Boolean);
+  const personal = (pers.data || []).filter((p) => p.activo || yaEran.includes(p.nombre));
+  personal.push(...yaEran.filter((n) => !personal.some((p) => p.nombre === n)).map((nombre) => ({ nombre })));
   const input = (c) => {
     const val = b[c.k] ?? "";
     const tipo = c.t ? `inputmode="${c.t === "int" ? "numeric" : "decimal"}"` : "";
@@ -142,7 +149,9 @@ async function formulario(id) {
         <div><label for="f-estado">Estado</label><select id="f-estado">${ESTADOS.map((e) => `<option${e === b.estado ? " selected" : ""}>${e}</option>`).join("")}</select></div>
         <div><label for="f-fases">Fases</label><select id="f-fases">
           <option value="3"${b.fases === 3 ? " selected" : ""}>Trifásico</option><option value="1"${b.fases === 1 ? " selected" : ""}>Monofásico</option></select></div>
-      </div></div>
+      </div>
+      <label>Encargado/s</label>
+      <div class="checks" id="f-encargados">${checksPersonal(personal, yaEran, "nombre") || `<span class="muted small">No hay personal registrado.</span>`}</div></div>
       <div class="panel"><h2>Datos de placa</h2><div class="grid2">${PLACA.map(input).join("")}</div></div>
       <div class="panel"><h2>Bobinado</h2><div class="grid2">${BOBINA.map(input).join("")}</div>
         <label for="f-obs">Observaciones</label><textarea id="f-obs">${esc(b.observaciones || "")}</textarea></div>
@@ -151,6 +160,7 @@ async function formulario(id) {
     </form>`);
 
   activarCampoCliente($("#f-cliente", v));
+  fotosPersonal($("#f-encargados", v));
   $("#form-bob", v).onsubmit = async (ev) => {
     ev.preventDefault();
     if (!$("#f-fecha").value) return aviso("Indica la fecha.", true);
@@ -160,6 +170,7 @@ async function formulario(id) {
       cliente_id, fecha: $("#f-fecha").value, estado: $("#f-estado").value,
       fases: Number($("#f-fases").value), potencia_unidad: $("#f-potencia_unidad").value,
       observaciones: $("#f-obs").value.trim() || null,
+      encargados: $$("#f-encargados input:checked").map((i) => i.value).join(", ") || null,
     };
     for (const c of [...PLACA, ...BOBINA]) {
       const raw = $("#f-" + c.k).value.trim();

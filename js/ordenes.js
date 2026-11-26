@@ -2,7 +2,7 @@
 // el personal asignado la inicia y la termina con un informe (y fotos/videos); el jefe (o un admin) la verifica.
 import {
   sb, H, OPC, $, $$, esc, aviso, msgError, msgCarga, dato, vista, cargando, fecha, fmtHora, hoy, descargarCSV,
-  clientesEmpresa, campoCliente, activarCampoCliente, clienteElegido, esAdmin, esJefe, alSalirDeVista,
+  clientesEmpresa, checksPersonal, fotosPersonal, campoCliente, activarCampoCliente, clienteElegido, esAdmin, esJefe, alSalirDeVista,
 } from "./nucleo.js";
 import { subirMedios, pintarMedios, borrarMedio } from "./medios.js";
 
@@ -287,7 +287,7 @@ async function formulario(id) {
       <label for="f-desc">Detalle</label><textarea id="f-desc" rows="4">${esc(o.descripcion || "")}</textarea>
       <label class="req">A cargo</label>
       <div class="checks" id="f-ops">
-        ${personal.map((p) => `<label><input type="checkbox" value="${p.id}"${o.ops.includes(p.id) ? " checked" : ""}>${esc(p.nombre)}</label>`).join("")
+        ${checksPersonal(personal, o.ops)
           || `<span class="muted small">No hay personal registrado. ${esAdmin() ? `<a href="#/admin/personal">Agregar personal</a>` : "Pide al administrador que lo agregue."}</span>`}
       </div>
       <div class="ayuda">Solo quienes tienen cuenta vinculada en Personal pueden iniciar y terminar la orden desde la app.</div>
@@ -296,6 +296,7 @@ async function formulario(id) {
     </form>`);
 
   activarCampoCliente($("#f-cliente", v));
+  fotosPersonal($("#f-ops", v));
   $("#form-ot", v).onsubmit = async (ev) => {
     ev.preventDefault();
     const titulo = $("#f-titulo").value.trim(), cliente_id = await clienteElegido($("#f-cliente"));

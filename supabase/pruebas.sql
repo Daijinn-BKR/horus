@@ -432,5 +432,26 @@ do $$ declare v uuid := '00000000-0000-0000-0000-0000000000a1'; ok boolean := fa
 end $$;
 reset role;
 
+-- ---------- Fotos de perfil del personal ----------
+-- c (operario de Omega) está en Personal (e9) y tiene foto; b ahora es jefe de Omega; d es un cliente
+update perfiles set foto = '00000000-0000-0000-0000-00000000000c/yo.jpg' where id = '00000000-0000-0000-0000-00000000000c';
+insert into storage.objects (bucket_id, name, owner_id) values ('avatares', '00000000-0000-0000-0000-00000000000c/yo.jpg', '00000000-0000-0000-0000-00000000000c');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', true);
+set local role authenticated;
+do $$ begin
+  if (select count(*) from fotos_personal('omega')) <> 1 then raise exception 'FALLA: fotos_personal no da la foto del compañero'; end if;
+  if exists (select 1 from fotos_personal('lafken')) then raise exception 'FALLA: fotos_personal muestra otra empresa'; end if;
+  if not exists (select 1 from storage.objects where bucket_id = 'avatares') then raise exception 'FALLA: no ve la foto de un compañero'; end if;
+  raise notice 'OK: fotos del personal';
+end $$;
+reset role;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000d', true);  -- cliente
+set local role authenticated;
+do $$ begin
+  if exists (select 1 from storage.objects where bucket_id = 'avatares') then raise exception 'FALLA: un cliente ve fotos del personal'; end if;
+  raise notice 'OK: las fotos de perfil no las ven los clientes';
+end $$;
+reset role;
+
 rollback;
 \echo 'Todas las pruebas pasaron.'

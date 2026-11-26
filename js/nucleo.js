@@ -273,6 +273,25 @@ export function activarCampoCliente(input, { local } = {}) {
   });
   input.addEventListener("blur", () => setTimeout(cerrar, 150));
 }
+// ---------- Personal con un clic ----------
+// Casillas para elegir personal, con la foto de perfil al lado (o la inicial si no tiene).
+// valor: lo que guarda cada casilla, "id" (servicios, órdenes) o "nombre" (encargados de equipos y bobinado).
+export function checksPersonal(personal, marcados, valor = "id") {
+  return personal.map((p) => `<label class="persona"><input type="checkbox" value="${esc(p[valor])}"${marcados.includes(p[valor]) ? " checked" : ""}>
+    <span class="mini-avatar" data-usuario="${esc(p.usuario_id || "")}" aria-hidden="true">${esc((p.nombre || "?").trim().charAt(0).toUpperCase())}</span>${esc(p.nombre)}</label>`).join("");
+}
+// Pone las fotos de perfil en las casillas ya pintadas. Es solo adorno: si algo falla, quedan las iniciales.
+export async function fotosPersonal(cont) {
+  const spans = [...cont.querySelectorAll(".mini-avatar")].filter((s) => s.dataset.usuario);
+  if (!spans.length) return;
+  const { data } = await sb.rpc("fotos_personal", { p_empresa: H.empresa.id });
+  if (!data?.length) return;
+  const { data: urls } = await sb.storage.from("avatares").createSignedUrls(data.map((x) => x.foto), 3600);
+  const url = Object.fromEntries((urls || []).filter((u) => u.signedUrl).map((u) => [u.path, u.signedUrl]));
+  const porUsuario = Object.fromEntries(data.map((x) => [x.usuario_id, url[x.foto]]));
+  for (const s of spans) if (porUsuario[s.dataset.usuario]) s.innerHTML = `<img src="${esc(porUsuario[s.dataset.usuario])}" alt="">`;
+}
+
 // Cliente nuevo: con RUT válido o, si no se consigue, sin RUT (queda URGENTE en la campanita hasta completarlo)
 let dlgNuevo = null;
 function clienteNuevo(input, nombre) {

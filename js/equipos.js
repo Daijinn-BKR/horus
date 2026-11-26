@@ -1,7 +1,7 @@
 // Horus · Equipos (motores y bombas): fichas, mediciones, fotos/videos y QR
 import {
   sb, H, OPC, $, $$, esc, aviso, msgError, vista, cargando, alSalirDeVista, fecha, fechaHora, hoy,
-  chipEstado, unicos, linkEquipo, qrImagen, dato, descargarCSV, clientesEmpresa, campoCliente, activarCampoCliente, clienteElegido, esAdmin, esCliente,
+  chipEstado, unicos, linkEquipo, qrImagen, dato, descargarCSV, clientesEmpresa, checksPersonal, fotosPersonal, campoCliente, activarCampoCliente, clienteElegido, esAdmin, esCliente,
   abrirLector, cerrarLector,
 } from "./nucleo.js";
 import { fichaLimitadaHTML } from "./publico.js";
@@ -422,8 +422,15 @@ async function formulario(id) {
     if (!e) { vista(`<a href="#/equipos" class="volver">← Equipos</a><p class="vacio">No existe un equipo con ID ${esc(id)}.</p>`); return; }
   }
   if (!equipos.length) await cargarEquipos();
-  const clientes = await clientesEmpresa();
+  const [clientes, pers] = await Promise.all([
+    clientesEmpresa(),
+    sb.from("personal").select("*").eq("empresa_id", H.empresa.id).order("nombre"),
+  ]);
   const volver = e ? "#/equipos/" + encodeURIComponent(e.id) : "#/equipos";
+  // Encargados: se eligen del personal con un clic. Un nombre escrito a mano antes (que no está en Personal) se conserva.
+  const yaEran = (e?.encargados || "").split(",").map((x) => x.trim()).filter(Boolean);
+  const personal = (pers.data || []).filter((p) => p.activo || yaEran.includes(p.nombre));
+  personal.push(...yaEran.filter((n) => !personal.some((p) => p.nombre === n)).map((nombre) => ({ nombre })));
   const val = (k) => (e ? e[k] ?? "" : "");
   const estados = opciones("estado");
   const estadoActual = e ? e.estado ?? "" : (estados[0] || "");
@@ -434,7 +441,11 @@ async function formulario(id) {
       <div class="panel"><h2>Datos del equipo</h2>
         <label for="f-cliente" class="req">Cliente</label>
         ${campoCliente("f-cliente", clientes.find((c) => c.id === e?.cliente_id))}
-        <div class="grid2">${GENERAL.map((c) => `<div>${campoHTML(c, val(c.k))}</div>`).join("")}</div>
+        <div class="grid2">${GENERAL.filter((c) => c.k !== "encargados").map((c) => `<div>${campoHTML(c, val(c.k))}</div>`).join("")}</div>
+        <label>Encargado/s</label>
+        <div class="checks" id="f-encargados">${checksPersonal(personal, yaEran, "nombre")
+          || `<span class="muted small">No hay personal registrado. ${esAdmin() ? `<a href="#/admin/personal">Agregar personal</a>` : "Pide al administrador que lo agregue."}</span>`}</div>
+        <input type="hidden" name="encargados" value="${esc(yaEran.join(", "))}">
       </div>
       <div class="panel"><h2>Mediciones</h2><div class="medidas-form">
         ${MEDICIONES.map(([k, l]) => `<div><label for="f-${k}">${l}</label>
@@ -455,6 +466,10 @@ async function formulario(id) {
         <button type="submit" class="primary" id="btn-guardar">${e ? "Guardar cambios" : "Guardar equipo"}</button></div>
     </form>`);
   activarCampoCliente($("#f-cliente", v));
+  fotosPersonal($("#f-encargados", v));
+  $("#f-encargados", v).onchange = () => {
+    $("[name=encargados]", v).value = $$("#f-encargados input:checked").map((i) => i.value).join(", ");
+  };
   $("#f-cliente", v).focus();
 
   $("#form-equipo", v).onsubmit = async (ev) => {

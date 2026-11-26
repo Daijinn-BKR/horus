@@ -65,6 +65,8 @@ Las apps originales quedaron sin cambios en `legado/` como referencia (esa carpe
   provisorios: se cambian en `tipos_orden` de `js/config.example.js`. El personal asignado y el jefe pueden
   agregar **fotos y videos** (máx. 50 MB por video) mientras la orden no esté verificada; cada uno puede borrar
   los que subió, y el admin cualquiera.
+- **Encargados con un clic**: en Equipos (Omega), Bobinado, Servicios y Órdenes el personal se marca con casillas, con la
+  foto de perfil de cada persona al lado (si tiene cuenta y foto). El personal de una empresa ve las fotos de sus compañeros.
 - **Servicios** (Lafken): cada visita lleva su **IV** (informe de visita, 4 números o más), el **número de visitas**
   del servicio y **una foto** (botón *Tomar foto* para usar la cámara del celular). La **última visita** lleva además el
   **CSI** (5 números): con 1 visita se entregan IV y CSI; con 2, la primera lleva IV y la segunda IV y CSI. Si el servicio tiene más visitas, la tarjeta muestra “Iniciar segunda visita” (tercera…),

@@ -1431,8 +1431,14 @@ on conflict (id) do nothing;
 drop policy if exists "horus_avatar_leer"   on storage.objects;
 drop policy if exists "horus_avatar_subir"  on storage.objects;
 drop policy if exists "horus_avatar_borrar" on storage.objects;
+-- ¿La foto es de alguien del personal de mi empresa? (se ve al lado de su nombre al elegir encargados)
+create or replace function avatar_companero(p_carpeta text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from personal p where p.usuario_id::text = p_carpeta and es_staff(p.empresa_id));
+$$;
 create policy "horus_avatar_leer"   on storage.objects for select to authenticated
-  using (bucket_id = 'avatares' and ((storage.foldername(name))[1] = auth.uid()::text or es_admin()));
+  using (bucket_id = 'avatares' and ((storage.foldername(name))[1] = auth.uid()::text or es_admin()
+         or avatar_companero((storage.foldername(name))[1])));
 create policy "horus_avatar_subir"  on storage.objects for insert to authenticated
   with check (bucket_id = 'avatares' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "horus_avatar_borrar" on storage.objects for delete to authenticated
@@ -1895,5 +1901,21 @@ begin
 end $$;
 revoke execute on function completar_rut(uuid, text) from anon, public;
 grant  execute on function completar_rut(uuid, text) to authenticated;
+
+-- =====================================================================
+--  Encargados con un clic (equipos y bobinado) y foto de perfil del personal al lado de su nombre
+-- =====================================================================
+alter table bobinados add column if not exists encargados text;   -- nombres del personal, separados por coma
+
+-- Fotos de perfil del personal de la empresa (solo la ruta; la imagen se pide con URL firmada)
+create or replace function fotos_personal(p_empresa text) returns table (usuario_id uuid, foto text)
+language sql stable security definer set search_path = public as $$
+  select p.usuario_id, f.foto from personal p join perfiles f on f.id = p.usuario_id
+   where p.empresa_id = p_empresa and f.foto is not null and es_staff(p_empresa);
+$$;
+revoke execute on function fotos_personal(text) from anon, public;
+grant  execute on function fotos_personal(text) to authenticated;
+revoke all on function avatar_companero(text) from public, anon;
+grant execute on function avatar_companero(text) to authenticated;
 
 notify pgrst, 'reload schema';
