@@ -2,7 +2,7 @@
 // para cuándo y la lista de materiales con precio, con el monto total calculado.
 import {
   sb, H, $, $$, esc, aviso, msgError, msgCarga, dato, vista, cargando, fecha, fmtHora, hoy, nf, descargarCSV,
-  clientesEmpresa, campoCliente, activarCampoCliente, clienteElegido, esAdmin,
+  clientesEmpresa, filtroClienteFechas, pasaClienteFechas, nombreCSV, campoCliente, activarCampoCliente, clienteElegido, esAdmin,
 } from "./nucleo.js";
 
 // Solo jefe eléctrico y admin (lo revisa el router)
@@ -41,6 +41,7 @@ async function lista() {
         ${ESTADOS.map((e) => `<option>${e}</option>`).join("")}
         <option value="">Todos</option>
       </select>
+      ${filtroClienteFechas("pp", await clientesEmpresa())}
       <button id="p-csv">Exportar CSV</button>
     </div>
     <p id="p-conteo" class="muted small"></p>
@@ -54,9 +55,10 @@ async function lista() {
     return;
   }
   const total = (p) => montos(p.proyecto_materiales, p.agregar_iva).total;
+  let vistos = [];
   const pintar = () => {
     const f = $("#p-estado").value, q = $("#p-buscar").value.trim().toLowerCase();
-    const l = data.filter((p) => (f === "" || (f === "abiertos" ? abierto(p) : p.estado === f)) &&
+    const l = vistos = data.filter((p) => pasaClienteFechas("pp", p.cliente_id, p.fecha_estimada) && (f === "" || (f === "abiertos" ? abierto(p) : p.estado === f)) &&
       (!q || [p.nombre, p.lugar, p.clientes?.nombre, p.descripcion].some((v) => String(v ?? "").toLowerCase().includes(q))));
     const suma = l.reduce((s, p) => s + total(p), 0);
     $("#p-conteo").textContent = `${l.length} proyecto${l.length === 1 ? "" : "s"}${l.length ? " · Total materiales " + clp(suma) : ""}`;
@@ -70,11 +72,11 @@ async function lista() {
       </a>`).join("")
       : `<p class="vacio">${data.length ? "No hay proyectos con este filtro." : "Todavía no hay proyectos. Toca “+ Nuevo proyecto”."}</p>`;
   };
-  $("#p-estado").onchange = pintar;
+  ["#p-estado", "#pp-cli", "#pp-desde", "#pp-hasta"].forEach((s) => ($(s).onchange = pintar));
   $("#p-buscar").oninput = pintar;
-  $("#p-csv").onclick = () => descargarCSV("proyectos-pendientes",
+  $("#p-csv").onclick = () => descargarCSV(nombreCSV("proyectos-pendientes", "pp"),
     ["Proyecto", "Lugar", "Cliente", "Fecha estimada", "Estado", "Materiales", "Neto", "IVA", "Total", "Detalle", "Creado"],
-    data.map((p) => {
+    vistos.map((p) => {
       const m = montos(p.proyecto_materiales, p.agregar_iva);
       return [p.nombre, p.lugar, p.clientes?.nombre, p.fecha_estimada, p.estado, p.proyecto_materiales.length,
         m.neto, m.iva, m.total, p.descripcion, fmtHora(p.creado_en)];

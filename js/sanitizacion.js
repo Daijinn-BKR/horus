@@ -2,7 +2,7 @@
 // Solo el supervisor (rol jefe de Lafken) y el admin la ven, la editan y cambian el estado (lo revisa la base de datos).
 import {
   sb, H, $, esc, aviso, msgError, msgCarga, dato, vista, cargando, fecha, hoy, descargarCSV,
-  clientesEmpresa, campoCliente, activarCampoCliente, clienteElegido, esAdmin, esJefe,
+  clientesEmpresa, filtroClienteFechas, pasaClienteFechas, nombreCSV, campoCliente, activarCampoCliente, clienteElegido, esAdmin, esJefe,
 } from "./nucleo.js";
 
 const ESTADOS = ["Cotizado", "Coordinado", "Finalizado"];
@@ -27,6 +27,7 @@ async function lista(estado) {
     <div class="cabecera"><h1>Sanitización de estanques</h1><a class="btn primary" href="#/sanitizacion/nuevo">+ Nueva cotización</a></div>
     <div class="pestanas">${ESTADOS.map((e) => `<a href="${ruta(e)}" class="${e === estado ? "on" : ""}">${e}</a>`).join("")}</div>
     <div class="filtros"><input id="s-buscar" type="search" placeholder="Buscar por cliente, lugar o personal…" aria-label="Buscar">
+      ${filtroClienteFechas("sa", await clientesEmpresa())}
       <button id="s-csv">Exportar CSV</button></div>
     <p id="s-conteo" class="muted small"></p>
     <div id="s-lista" class="lista"></div>`);
@@ -35,9 +36,10 @@ async function lista(estado) {
     .order("fecha_programada", { ascending: true, nullsFirst: false }).order("creado_en", { ascending: false });
   if (!$("#s-lista")) return; // el usuario cambió de pantalla mientras cargaba
   if (error) { $("#s-lista").innerHTML = `<p class="vacio">${esc(msgCarga(error, "sanitizaciones"))}</p>`; return; }
+  let vistos = [];
   const pintar = () => {
     const q = $("#s-buscar").value.trim().toLowerCase();
-    const l = data.filter((s) => !q || [s.clientes?.nombre, s.lugar, s.personal, s.detalle].some((v) => String(v ?? "").toLowerCase().includes(q)));
+    const l = vistos = data.filter((s) => pasaClienteFechas("sa", s.cliente_id, s.fecha_programada || s.creado_en) && (!q || [s.clientes?.nombre, s.lugar, s.personal, s.detalle].some((v) => String(v ?? "").toLowerCase().includes(q))));
     $("#s-conteo").textContent = `${l.length} sanitizaci${l.length === 1 ? "ón" : "ones"}`;
     $("#s-lista").innerHTML = l.length ? l.map((s) => `
       <a class="tarjeta" href="#/sanitizacion/${s.id}">
@@ -48,9 +50,10 @@ async function lista(estado) {
       </a>`).join("") : `<p class="vacio">${data.length ? "Sin resultados." : `No hay sanitizaciones en ${estado.toLowerCase()}.`}</p>`;
   };
   $("#s-buscar").oninput = pintar;
-  $("#s-csv").onclick = () => descargarCSV("sanitizacion-" + estado.toLowerCase(),
+  ["#sa-cli", "#sa-desde", "#sa-hasta"].forEach((s) => ($(s).onchange = pintar));
+  $("#s-csv").onclick = () => descargarCSV(nombreCSV("sanitizacion-" + estado.toLowerCase(), "sa"),
     ["Cliente", "Lugar", "Estanques", "Estado", "Personal", "Fecha", "Quedan", "Detalle"],
-    data.map((s) => [s.clientes?.nombre, s.lugar, s.estanques, s.estado, s.personal, s.fecha_programada, s.estanques_pendientes, s.detalle]));
+    vistos.map((s) => [s.clientes?.nombre, s.lugar, s.estanques, s.estado, s.personal, s.fecha_programada, s.estanques_pendientes, s.detalle]));
   pintar();
 }
 

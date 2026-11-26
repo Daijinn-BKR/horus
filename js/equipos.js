@@ -1,7 +1,7 @@
 // Horus · Equipos (motores y bombas): fichas, mediciones, fotos/videos y QR
 import {
   sb, H, OPC, $, $$, esc, aviso, msgError, vista, cargando, alSalirDeVista, fecha, fechaHora, hoy,
-  chipEstado, unicos, linkEquipo, qrImagen, dato, descargarCSV, clientesEmpresa, checksPersonal, fotosPersonal, campoCliente, activarCampoCliente, clienteElegido, esAdmin, esCliente,
+  chipEstado, unicos, linkEquipo, qrImagen, dato, descargarCSV, filtroClienteFechas, pasaClienteFechas, nombreCSV, clientesEmpresa, checksPersonal, fotosPersonal, campoCliente, activarCampoCliente, clienteElegido, esAdmin, esCliente,
   abrirLector, cerrarLector,
 } from "./nucleo.js";
 import { fichaLimitadaHTML } from "./publico.js";
@@ -66,8 +66,7 @@ async function lista() {
     </div>
     <div class="filtros">
       <input id="buscar" type="search" placeholder="Buscar por cliente, motor, encargado o ID…" aria-label="Buscar">
-      <select id="f-cliente" aria-label="Cliente"><option value="">Todos los clientes</option>
-        ${clientes.map((c) => `<option value="${c.id}">${esc(c.nombre)}</option>`).join("")}</select>
+      ${filtroClienteFechas("eq", clientes)}
       <select id="f-estado" aria-label="Estado"></select>
     </div>
     <div id="fuera"></div>
@@ -80,8 +79,8 @@ async function lista() {
     sel.value = v;
   };
   const pintar = () => {
-    const q = $("#buscar").value.trim().toLowerCase(), est = $("#f-estado").value, cli = $("#f-cliente").value;
-    const l = equipos.filter((e) => (!est || e.estado === est) && (!cli || e.cliente_id === cli) &&
+    const q = $("#buscar").value.trim().toLowerCase(), est = $("#f-estado").value;
+    const l = vistos = equipos.filter((e) => (!est || e.estado === est) && pasaClienteFechas("eq", e.cliente_id, e.creado_en) &&
       (!q || [e.id, nombreCliente(e), e.tipo_motor, e.tipo_voltaje, e.tipo_mantenimiento, e.encargados]
         .some((v) => String(v ?? "").toLowerCase().includes(q))));
     $("#conteo").textContent = `${l.length} de ${equipos.length} equipos`;
@@ -93,9 +92,10 @@ async function lista() {
       </a>`).join("")
       : `<p class="vacio">${equipos.length ? "No hay equipos que coincidan." : "Todavía no hay equipos. Toca “+ Nuevo equipo”."}</p>`;
   };
+  let vistos = [];
   estados(); pintar();
-  ["#buscar", "#f-estado", "#f-cliente"].forEach((s) => $(s).addEventListener("input", pintar));
-  $("#btn-csv").onclick = exportarCSV;
+  ["#buscar", "#f-estado", "#eq-cli", "#eq-desde", "#eq-hasta"].forEach((s) => $(s).addEventListener("input", pintar));
+  $("#btn-csv").onclick = () => exportarCSV(vistos);
 
   // Tiempo real: lo que registra otra persona aparece sin recargar
   let t;
@@ -107,7 +107,7 @@ async function lista() {
   alSalirDeVista(() => { clearTimeout(t); sb.removeChannel(canal); });
 }
 
-function exportarCSV() {
+function exportarCSV(lista) {
   const cols = [
     ["id", "ID_Equipo"], ["cliente", "Cliente"], ["tipo_motor", "Tipo_de_motor"], ["tipo_voltaje", "Tipo_de_Voltaje"],
     ["tipo_mantenimiento", "Tipo_de_Mantenimiento"], ["encargados", "Encargado/s"],
@@ -116,8 +116,8 @@ function exportarCSV() {
     ["proceso", "Proceso"], ["notas", "Notas_Adicionales"], ["estado", "Estado"],
     ["creado_en", "Creado"], ["actualizado_en", "Modificado"],
   ];
-  descargarCSV("equipos", cols.map((c) => c[1]),
-    equipos.map((e) => cols.map(([k]) => (k === "cliente" ? nombreCliente(e) : e[k]))));
+  descargarCSV(nombreCSV("equipos", "eq"), cols.map((c) => c[1]),
+    lista.map((e) => cols.map(([k]) => (k === "cliente" ? nombreCliente(e) : e[k]))));
 }
 
 // ---------- Ficha completa (personal) ----------

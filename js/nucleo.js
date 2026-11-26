@@ -208,6 +208,31 @@ export async function clientesEmpresa(forzar = false) {
   if (error) { aviso(msgError(error), true); return []; }
   return (cacheClientes[emp] = data);
 }
+// ---------- Filtros Cliente / Desde / Hasta (las listas y su "Exportar CSV" usan lo mismo) ----------
+export function filtroClienteFechas(p, clientes) {
+  return `<select id="${p}-cli" aria-label="Cliente"><option value="">Todos los clientes</option>
+      ${clientes.map((c) => `<option value="${c.id}">${esc(c.nombre)}</option>`).join("")}</select>
+    <label class="fecha-filtro">Desde <input type="date" id="${p}-desde"></label>
+    <label class="fecha-filtro">Hasta <input type="date" id="${p}-hasta"></label>`;
+}
+// Día local "aaaa-mm-dd" de una fecha, o de una fecha y hora guardada en UTC (de noche en Chile ya es "mañana" en UTC)
+export function diaLocal(f) {
+  if (!f) return "";
+  if (String(f).length <= 10) return String(f);
+  const d = new Date(f), dd = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${dd(d.getMonth() + 1)}-${dd(d.getDate())}`;
+}
+// ¿La fila pasa el filtro? fecha: "aaaa-mm-dd" o fecha y hora
+export function pasaClienteFechas(p, clienteId, fecha) {
+  const cli = $(`#${p}-cli`)?.value, d = $(`#${p}-desde`)?.value, h = $(`#${p}-hasta`)?.value, f = diaLocal(fecha);
+  return (!cli || clienteId === cli) && (!d || (f && f >= d)) && (!h || (f && f <= h));
+}
+// Nombre del CSV con el cliente elegido, para no confundir archivos (ej. "equipos-santo-tomas")
+export function nombreCSV(base, p) {
+  const sel = $(`#${p}-cli`);
+  const cli = sel?.value ? sel.selectedOptions[0].textContent.trim() : "";
+  return cli ? `${base}-${cli.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 40)}` : base;
+}
 export function olvidarClientes() { for (const k in cacheClientes) delete cacheClientes[k]; }
 
 // ---------- Campo Cliente con búsqueda ----------

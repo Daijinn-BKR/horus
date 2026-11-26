@@ -123,6 +123,7 @@ function pintarProductos() {
       (!bajo || esBajo(p)) && (!sel.value || p.categoria === sel.value));
     const nBajo = activos.filter(esBajo).length;
     $("#resumen").textContent = `${activos.length} productos` + (nBajo ? ` · ${nBajo} con stock bajo` : "");
+    vistosProd = l;
     $("#lista").innerHTML = l.length ? l.map(tarjeta).join("")
       : `<p class="vacio" style="grid-column:1/-1">${activos.length || baja ? "Sin resultados." : "Aún no hay productos. Crea el primero con “+ Nuevo producto”."}</p>`;
   };
@@ -133,7 +134,7 @@ function pintarProductos() {
   $("#btn-scan").onclick = abrirScan;
   $("#btn-csv").onclick = () => descargarCSV("inventario",
     ["Código", "Nombre", "Categoría", "Ubicación", "Stock", "Unidad", "Stock mínimo", "Activo"],
-    productos.map((p) => [p.codigo, p.nombre, p.categoria, p.ubicacion, Number(p.stock), p.unidad, Number(p.stock_minimo), p.activo ? "Sí" : "No"]));
+    vistosProd.map((p) => [p.codigo, p.nombre, p.categoria, p.ubicacion, Number(p.stock), p.unidad, Number(p.stock_minimo), p.activo ? "Sí" : "No"]));
   $("#lista").onclick = (ev) => {
     const b = ev.target.closest("button");
     if (!b) return;
@@ -277,6 +278,9 @@ async function abrirScan() {
   }
 }
 
+// Lo que está a la vista (con la búsqueda y los filtros aplicados): es lo que se exporta
+let vistosProd = [], vistosMov = [];
+
 // ---------- Movimientos ----------
 function pintarMovimientos() {
   $("#cuerpo").innerHTML = `
@@ -288,7 +292,7 @@ function pintarMovimientos() {
       <tbody id="tabla-mov"></tbody></table></div>`;
   const filtrar = () => {
     const q = $("#buscar").value.trim().toLowerCase();
-    const l = movimientos.filter((m) => !q || [m.productos?.nombre, m.productos?.codigo, m.motivo, m.usuario].some((x) => (x || "").toLowerCase().includes(q)));
+    const l = vistosMov = movimientos.filter((m) => !q || [m.productos?.nombre, m.productos?.codigo, m.motivo, m.usuario].some((x) => (x || "").toLowerCase().includes(q)));
     $("#tabla-mov").innerHTML = l.length ? l.map((m) => `<tr>
       <td>${esc(fmtHora(m.creado_en))}</td>
       <td>${esc(m.productos?.nombre || "—")}<div class="muted small">${esc(m.productos?.codigo || "")}</div></td>
@@ -303,5 +307,5 @@ function pintarMovimientos() {
   $("#buscar").oninput = filtrar;
   $("#btn-csv").onclick = () => descargarCSV("movimientos",
     ["Fecha", "Código", "Producto", "Tipo", "Cantidad", "Unidad", "Motivo", "Usuario"],
-    movimientos.map((m) => [fmtHora(m.creado_en), m.productos?.codigo, m.productos?.nombre, m.tipo, Number(m.cantidad), m.productos?.unidad, m.motivo, m.usuario]));
+    vistosMov.map((m) => [fmtHora(m.creado_en), m.productos?.codigo, m.productos?.nombre, m.tipo, Number(m.cantidad), m.productos?.unidad, m.motivo, m.usuario]));
 }

@@ -2,7 +2,7 @@
 // el personal asignado la inicia y la termina con un informe (y fotos/videos); el jefe (o un admin) la verifica.
 import {
   sb, H, OPC, $, $$, esc, aviso, msgError, msgCarga, dato, vista, cargando, fecha, fmtHora, hoy, descargarCSV,
-  clientesEmpresa, checksPersonal, fotosPersonal, campoCliente, activarCampoCliente, clienteElegido, esAdmin, esJefe, alSalirDeVista,
+  clientesEmpresa, filtroClienteFechas, pasaClienteFechas, nombreCSV, checksPersonal, fotosPersonal, campoCliente, activarCampoCliente, clienteElegido, esAdmin, esJefe, alSalirDeVista,
 } from "./nucleo.js";
 import { subirMedios, pintarMedios, borrarMedio } from "./medios.js";
 
@@ -47,12 +47,13 @@ async function lista() {
         ${ESTADOS.map((e) => `<option value="${e}">${esc(TXT_ESTADO[e] || e)}</option>`).join("")}
         <option value="">Todas</option>
       </select>
+      ${filtroClienteFechas("ot", await clientesEmpresa())}
       <button id="o-csv">Exportar CSV</button>
     </div>
     <p id="o-conteo" class="muted small"></p>
     <div id="o-lista" class="lista"></div>`);
   $("#o-estado").value = filtroInicial;
-  let datos = [];
+  let datos = [], vistos = [];
   const cargar = async () => {
     const { data, error } = await sb.from("ordenes_trabajo").select(SELECT)
       .eq("empresa_id", H.empresa.id).order("creado_en", { ascending: false }).limit(500);
@@ -66,7 +67,7 @@ async function lista() {
   };
   const pintar = () => {
     const f = $("#o-estado").value, q = $("#o-buscar").value.trim().toLowerCase();
-    const l = datos.filter((o) =>
+    const l = vistos = datos.filter((o) => pasaClienteFechas("ot", o.cliente_id, o.creado_en) &&
       (f === "" || (f === "abiertas" ? o.estado !== "Verificada" : f === "mias" ? soyAsignado(o) && o.estado !== "Verificada" : o.estado === f)) &&
       (!q || [num(o), o.titulo, o.tipo, o.clientes?.nombre, o.ubicacion, ...nombres(o)].some((v) => String(v ?? "").toLowerCase().includes(q))));
     const porVerificar = datos.filter((o) => o.estado === "Terminada").length;
@@ -83,11 +84,11 @@ async function lista() {
       </a>`).join("")
       : `<p class="vacio">${datos.length ? "No hay órdenes con este filtro." : esJefe() ? "Todavía no hay órdenes. Toca “+ Nueva orden”." : "Todavía no hay órdenes."}</p>`;
   };
-  $("#o-estado").onchange = pintar;
+  ["#o-estado", "#ot-cli", "#ot-desde", "#ot-hasta"].forEach((s) => ($(s).onchange = pintar));
   $("#o-buscar").oninput = pintar;
-  $("#o-csv").onclick = () => descargarCSV("ordenes-trabajo",
+  $("#o-csv").onclick = () => descargarCSV(nombreCSV("ordenes-trabajo", "ot"),
     ["N°", "Título", "Tipo", "Prioridad", "Cliente", "Ubicación", "Programada", "Estado", "A cargo", "Informe", "Materiales", "Terminada", "Verificada", "Obs. verificación", "Devoluciones", "Creada"],
-    datos.map((o) => [num(o), o.titulo, o.tipo, o.prioridad, o.clientes?.nombre, o.ubicacion, o.fecha_programada, o.estado,
+    vistos.map((o) => [num(o), o.titulo, o.tipo, o.prioridad, o.clientes?.nombre, o.ubicacion, o.fecha_programada, o.estado,
       nombres(o), o.informe, o.materiales, o.terminado_en && fmtHora(o.terminado_en), o.verificado_en && fmtHora(o.verificado_en),
       o.obs_verificacion, o.devoluciones, fmtHora(o.creado_en)]));
   await cargar();

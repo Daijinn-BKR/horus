@@ -1,7 +1,7 @@
 // Horus · Bobinado: registro de motores rebobinados (solo admin y operarios con permiso)
 import {
   sb, H, $, $$, esc, dato, aviso, msgError, vista, cargando, fecha, hoy, nf, descargarCSV,
-  clientesEmpresa, checksPersonal, fotosPersonal, campoCliente, activarCampoCliente, clienteElegido, esAdmin,
+  clientesEmpresa, filtroClienteFechas, pasaClienteFechas, nombreCSV, checksPersonal, fotosPersonal, campoCliente, activarCampoCliente, clienteElegido, esAdmin,
 } from "./nucleo.js";
 
 export const rutas = [
@@ -45,8 +45,7 @@ async function lista() {
     </div>
     <div class="panel filtros">
       <div><label for="b-txt">Buscar</label><input id="b-txt" type="search" placeholder="Marca, modelo, serie, cliente…"></div>
-      <div><label for="b-cli">Cliente</label><select id="b-cli"><option value="">Todos</option>
-        ${clientes.map((c) => `<option value="${c.id}">${esc(c.nombre)}</option>`).join("")}</select></div>
+      <div class="filtros" style="grid-column:1/-1">${filtroClienteFechas("bo", clientes)}</div>
       <div><label for="b-est">Estado</label><select id="b-est"><option value="">Todos</option>
         ${ESTADOS.map((e) => `<option>${e}</option>`).join("")}</select></div>
     </div>
@@ -59,8 +58,8 @@ async function lista() {
 
   let vistos = [];
   const pintar = () => {
-    const txt = $("#b-txt").value.trim().toLowerCase(), cli = $("#b-cli").value, est = $("#b-est").value;
-    vistos = data.filter((b) => (!cli || b.cliente_id === cli) && (!est || b.estado === est) &&
+    const txt = $("#b-txt").value.trim().toLowerCase(), est = $("#b-est").value;
+    vistos = data.filter((b) => pasaClienteFechas("bo", b.cliente_id, b.fecha) && (!est || b.estado === est) &&
       (!txt || [b.marca, b.modelo, b.serie, b.clientes?.nombre, b.encargados, b.observaciones].join(" ").toLowerCase().includes(txt)));
     $("#conteo").textContent = `${vistos.length} de ${data.length} bobinado${data.length === 1 ? "" : "s"}`;
     $("#lista").innerHTML = vistos.length ? vistos.map((b) => `
@@ -72,11 +71,11 @@ async function lista() {
       </a>`).join("") : `<p class="vacio">${data.length ? "Ningún bobinado coincide con la búsqueda." : "Aún no hay bobinados registrados."}</p>`;
   };
   $("#b-txt").oninput = pintar;
-  $("#b-cli").onchange = pintar;
+  ["#bo-cli", "#bo-desde", "#bo-hasta"].forEach((s) => ($(s).onchange = pintar));
   $("#b-est").onchange = pintar;
-  $("#btn-csv").onclick = () => descargarCSV("bobinados",
-    ["Fecha", "Estado", "Cliente", ...PLACA.map((c) => c.n), "Unidad potencia", "Fases", ...BOBINA.map((c) => c.n), "Observaciones"],
-    vistos.map((b) => [b.fecha, b.estado, b.clientes?.nombre, ...PLACA.map((c) => b[c.k]), b.potencia_unidad, b.fases,
+  $("#btn-csv").onclick = () => descargarCSV(nombreCSV("bobinados", "bo"),
+    ["Fecha", "Estado", "Cliente", "Encargado/s", ...PLACA.map((c) => c.n), "Unidad potencia", "Fases", ...BOBINA.map((c) => c.n), "Observaciones"],
+    vistos.map((b) => [b.fecha, b.estado, b.clientes?.nombre, b.encargados, ...PLACA.map((c) => b[c.k]), b.potencia_unidad, b.fases,
       ...BOBINA.map((c) => b[c.k]), b.observaciones]));
   pintar();
 }

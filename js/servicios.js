@@ -1,7 +1,7 @@
 // Horus · Servicios (registro de visitas: desratización, mantención, etc.)
 import {
   sb, H, $, $$, esc, aviso, msgError, vista, cargando, fecha, hoy, descargarCSV,
-  clientesEmpresa, checksPersonal, fotosPersonal, campoCliente, activarCampoCliente, clienteElegido, opcionesServicio, esAdmin, esCliente,
+  clientesEmpresa, nombreCSV, checksPersonal, fotosPersonal, campoCliente, activarCampoCliente, clienteElegido, opcionesServicio, esAdmin, esCliente,
 } from "./nucleo.js";
 import { subirMedios } from "./medios.js";
 import { olvidarAvisos } from "./calendario.js";
@@ -93,7 +93,7 @@ async function lista() {
     }));
   };
   ["#h-cli", "#h-tipo", "#h-desde", "#h-hasta"].forEach((s) => ($(s).onchange = cargar));
-  $("#btn-csv").onclick = () => descargarCSV("servicios",
+  $("#btn-csv").onclick = () => descargarCSV(nombreCSV("servicios", "h"),
     ["Fecha", "IV", "CSI", "Visita", "Cliente", "Tipos", "Otros", "Personal", "Observaciones"],
     datos.map((s) => [s.fecha, s.iv, s.csi, `${s.visita} de ${s.visitas}`, s.clientes?.nombre, s.tipos, s.otros_detalle, s.servicio_personal.map((x) => x.personal?.nombre), s.observaciones]));
   cargar();
