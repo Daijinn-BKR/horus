@@ -52,7 +52,7 @@ end $$;
 
 grant usage on schema public, auth, storage, extensions to anon, authenticated;
 grant select on auth.users to authenticated;
-grant all on storage.objects, storage.buckets to authenticated;
+grant all on storage.objects, storage.buckets to anon, authenticated;  -- como en Supabase: RLS decide
 -- Igual que Supabase: las tablas y funciones nuevas de public quedan disponibles (RLS decide)
 alter default privileges in schema public grant all on tables to anon, authenticated;
 alter default privileges in schema public grant all on sequences to anon, authenticated;

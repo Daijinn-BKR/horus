@@ -445,13 +445,18 @@ create policy "equipos_crear"   on equipos for insert to authenticated with chec
 create policy "equipos_editar"  on equipos for update to authenticated using (es_staff(empresa_id)) with check (es_staff(empresa_id));
 create policy "equipos_borrar"  on equipos for delete to authenticated using (es_admin());
 
+-- El cliente con sesión (con el módulo Equipos) ve las fotos y videos de SUS equipos; sin sesión, nadie
+create or replace function cliente_ve_equipo(p_equipo text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select cliente_ve(e.cliente_id, 'equipos') from equipos e where e.id = p_equipo), false);
+$$;
 create policy "fotos_ver"     on fotos_equipo for select to authenticated
-  using (exists (select 1 from equipos e where e.id = equipo_id));
+  using (exists (select 1 from equipos e where e.id = equipo_id) or cliente_ve_equipo(equipo_id));
 create policy "fotos_crear"   on fotos_equipo for insert to authenticated
   with check (exists (select 1 from equipos e where e.id = equipo_id));
 create policy "fotos_borrar"  on fotos_equipo for delete to authenticated using (es_admin());
 create policy "videos_ver"    on videos_equipo for select to authenticated
-  using (exists (select 1 from equipos e where e.id = equipo_id));
+  using (exists (select 1 from equipos e where e.id = equipo_id) or cliente_ve_equipo(equipo_id));
 create policy "videos_crear"  on videos_equipo for insert to authenticated
   with check (exists (select 1 from equipos e where e.id = equipo_id));
 create policy "videos_borrar" on videos_equipo for delete to authenticated using (es_admin());
@@ -649,8 +654,16 @@ on conflict (id) do nothing;
 drop policy if exists "horus_archivos_leer"   on storage.objects;
 drop policy if exists "horus_archivos_subir"  on storage.objects;
 drop policy if exists "horus_archivos_borrar" on storage.objects;
+-- ¿El archivo es una foto o video de un equipo del cliente con sesión?
+create or replace function cliente_ve_archivo(p_ruta text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from fotos_equipo where ruta = p_ruta and cliente_ve_equipo(equipo_id))
+      or exists (select 1 from videos_equipo where ruta = p_ruta and cliente_ve_equipo(equipo_id));
+$$;
+revoke all on function cliente_ve_equipo(text), cliente_ve_archivo(text) from public, anon;
+grant execute on function cliente_ve_equipo(text), cliente_ve_archivo(text) to authenticated;
 create policy "horus_archivos_leer"   on storage.objects for select to authenticated
-  using (bucket_id = 'equipos' and es_staff((storage.foldername(name))[1]));
+  using (bucket_id = 'equipos' and (es_staff((storage.foldername(name))[1]) or cliente_ve_archivo(name)));
 create policy "horus_archivos_subir"  on storage.objects for insert to authenticated
   with check (bucket_id = 'equipos' and es_staff((storage.foldername(name))[1]));
 create policy "horus_archivos_borrar" on storage.objects for delete to authenticated

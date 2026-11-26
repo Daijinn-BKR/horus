@@ -400,6 +400,30 @@ do $$ declare f jsonb := (select x from mis_equipos() x limit 1); begin
   raise notice 'OK: el cliente no ve mediciones ni componentes';
 end $$;
 reset role;
+-- Fotos y videos: el cliente ve los de SUS equipos; sin sesión, ninguno
+insert into fotos_equipo (equipo_id, ruta) values ('eqomega1', 'omega/eqomega1/f1.jpg'), ('eqomega2', 'omega/eqomega2/f2.jpg');
+insert into storage.objects (bucket_id, name) values ('equipos', 'omega/eqomega1/f1.jpg'), ('equipos', 'omega/eqomega2/f2.jpg');
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000d', true);
+set local role authenticated;
+do $$ begin
+  if (select array_agg(ruta) from fotos_equipo) is distinct from array['omega/eqomega1/f1.jpg'] then
+    raise exception 'FALLA: el cliente no ve solo las fotos de su equipo';
+  end if;
+  if (select array_agg(name) from storage.objects where bucket_id = 'equipos') is distinct from array['omega/eqomega1/f1.jpg'] then
+    raise exception 'FALLA: el cliente no puede abrir solo los archivos de su equipo';
+  end if;
+  raise notice 'OK: el cliente ve las fotos de sus equipos';
+end $$;
+reset role;
+select set_config('request.jwt.claim.sub', '', true);
+set local role anon;
+do $$ begin
+  if exists (select 1 from fotos_equipo) or exists (select 1 from storage.objects where bucket_id = 'equipos') then
+    raise exception 'FALLA: sin sesión se ven fotos de equipos';
+  end if;
+  raise notice 'OK: sin sesión no se ven fotos ni videos';
+end $$;
+reset role;
 
 -- ---------- Órdenes de trabajo: el estado solo cambia con ot_iniciar / ot_terminar / ot_verificar ----------
 -- El operario de Omega pasa a ser personal asignado; el usuario de Lafken pasa a jefe de Omega

@@ -83,7 +83,7 @@ Las apps originales quedaron sin cambios en `legado/` como referencia (esa carpe
 - **Pendientes**: cada proyecto tiene lugar, fecha estimada, estado y una lista de materiales (cantidad × precio
   unitario = subtotal). El total se calcula solo; si los precios son netos, se marca “sumar IVA (19%)”.
 
-- **Ficha limitada** (cliente y visitante): empresa, ID, cliente, tipo de motor, voltaje, mantenimiento, estado y fechas. **No** muestra mediciones, notas, proceso, encargados, fotos ni videos. Se cambia en la función `equipo_limitado` de `supabase/schema.sql`.
+- **Ficha limitada** (cliente y visitante): empresa, ID, cliente, tipo de motor, voltaje, mantenimiento, estado y fechas. **No** muestra mediciones, componentes, notas, proceso ni encargados. El **cliente con sesión** además ve las **fotos y videos** de sus equipos; el visitante sin sesión (QR), no. Se cambia en la función `equipo_limitado` de `supabase/schema.sql`.
 - Un operario o jefe de Lafken que escanea un QR de Omega ve la ficha limitada.
 - Un usuario nuevo queda **“Sin acceso”** hasta que el administrador le asigna un rol.
 - **Contraseñas**: cada usuario cambia la suya con el botón de la llave (arriba, junto a su foto). Cuando el admin

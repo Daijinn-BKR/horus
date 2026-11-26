@@ -549,5 +549,19 @@ async function fichaCliente(id) {
   if (error) { aviso(msgError(error), true); return; }
   const f = data.find((x) => x.id === id);
   vista(`<a href="#/equipos" class="volver">← Mis equipos</a>` +
-    (f ? fichaLimitadaHTML(f) : `<p class="vacio">Este equipo no está asociado a tu cuenta.</p>`));
+    (f ? fichaLimitadaHTML(f) + `<div class="panel"><h2>Fotos</h2><div id="fotos" class="galeria"></div></div>
+      <div class="panel"><h2>Videos</h2><div id="videos" class="videos"></div></div>`
+      : `<p class="vacio">Este equipo no está asociado a tu cuenta.</p>`));
+  if (!f) return;
+  // El cliente ve las fotos y videos de sus equipos (la base de datos solo le entrega esos); sin sesión no se ven
+  const [fo, vi] = await Promise.all([
+    sb.from("fotos_equipo").select("ruta").eq("equipo_id", id).order("creado_en"),
+    sb.from("videos_equipo").select("ruta").eq("equipo_id", id).order("creado_en"),
+  ]);
+  if (!$("#fotos")) return;
+  await pintarMedios({
+    bucket: BUCKET, cf: $("#fotos"), cv: $("#videos"), alt: "Foto del equipo", vacioFotos: "Sin fotos.", vacioVideos: "Sin videos.",
+    items: [...(fo.data || []).map((x) => ({ ...x, tipo: "foto" })), ...(vi.data || []).map((x) => ({ ...x, tipo: "video" }))],
+    puedeQuitar: () => false, alQuitar: () => {},
+  });
 }
