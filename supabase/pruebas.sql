@@ -187,6 +187,12 @@ do $$ declare v uuid := (select id from servicios limit 1); n int; begin
   delete from storage.objects where bucket_id = 'servicios' and name = 'lafken/foto1.jpg';
   get diagnostics n = row_count;
   if n <> 1 then raise exception 'FALLA: no se pudo borrar la foto reemplazada'; end if;
+  -- La foto de observaciones también queda protegida
+  insert into storage.objects (bucket_id, name) values ('servicios', 'lafken/obs1.jpg');
+  update servicios set foto_obs = 'lafken/obs1.jpg' where id = v;
+  delete from storage.objects where bucket_id = 'servicios' and name = 'lafken/obs1.jpg';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'FALLA: el operario borró la foto de observaciones de un servicio registrado'; end if;
   raise notice 'OK: fotos de servicios protegidas';
 end $$;
 

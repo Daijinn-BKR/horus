@@ -54,7 +54,7 @@ async function lista() {
     datos = data;
     // URLs firmadas de las fotos (bucket privado)
     const fotos = {};
-    const rutas = data.filter((s) => s.foto).map((s) => s.foto);
+    const rutas = data.flatMap((s) => [s.foto_obs, s.foto].filter(Boolean));
     if (rutas.length) {
       const f = await sb.storage.from("servicios").createSignedUrls(rutas, 3600);
       (f.data || []).forEach((d) => { if (d.signedUrl) fotos[d.path] = d.signedUrl; });
@@ -77,16 +77,17 @@ async function lista() {
         ${tags(s)}
         <div class="muted small">Personal: ${s.servicio_personal.map((x) => esc(x.personal?.nombre)).join(", ") || "—"}</div>
         ${s.observaciones ? `<p style="margin:8px 0 0;white-space:pre-wrap">${esc(s.observaciones)}</p>` : ""}
-        ${fotos[s.foto] ? `<a href="${esc(fotos[s.foto])}" target="_blank" rel="noopener"><img src="${esc(fotos[s.foto])}" alt="Foto de las observaciones del IV"
-          loading="lazy" style="margin-top:8px;max-width:160px;max-height:120px;border-radius:8px;object-fit:cover"></a>` : ""}
+        ${[[s.foto_obs, "Foto de las observaciones del IV"], [s.foto, "Foto del IV"]].filter(([r]) => fotos[r]).map(([r, alt]) =>
+          `<a href="${esc(fotos[r])}" target="_blank" rel="noopener"><img src="${esc(fotos[r])}" alt="${alt}" title="${alt}"
+          loading="lazy" style="margin:8px 8px 0 0;max-width:160px;max-height:120px;border-radius:8px;object-fit:cover"></a>`).join("")}
       </div>`).join("") : `<p class="vacio">Sin servicios registrados.</p>`;
     $$("#lista [data-del]").forEach((b) => (b.onclick = async () => {
       if (!confirm("¿Eliminar este servicio? No se puede deshacer.")) return;
-      const foto = datos.find((x) => x.id === b.dataset.del)?.foto;
+      const x = datos.find((y) => y.id === b.dataset.del), rutas = [x?.foto, x?.foto_obs].filter(Boolean);
       const { error: e } = await sb.from("servicios").delete().eq("id", b.dataset.del);
       if (e) aviso(msgError(e), true);
       else {
-        if (foto) await sb.storage.from("servicios").remove([foto]); // la foto solo se borra si el servicio ya no existe
+        if (rutas.length) await sb.storage.from("servicios").remove(rutas); // las fotos solo se borran si el servicio ya no existe
         aviso("Servicio eliminado.");
       }
       cargar();
@@ -103,13 +104,13 @@ async function lista() {
 // id: editar ese servicio · desde: nueva visita que sigue a ese servicio
 async function formulario(id, desde = null) {
   cargando();
-  let s = { cliente_id: "", fecha: hoy(), tipos: [], otros_detalle: "", observaciones: "", ops: [], iv: "", visita: 1, visitas: 1, serie_id: null, foto: null };
+  let s = { cliente_id: "", fecha: hoy(), tipos: [], otros_detalle: "", observaciones: "", ops: [], iv: "", visita: 1, visitas: 1, serie_id: null, foto: null, foto_obs: null };
   if (id || desde) {
     const { data, error } = await sb.from("servicios").select("*, servicio_personal(personal_id)").eq("id", id || desde).maybeSingle();
     if (error || !data) { vista(`<a href="#/servicios" class="volver">← Servicios</a><p class="vacio">No se encontró el servicio.</p>`); return; }
     s = { ...data, ops: data.servicio_personal.map((x) => x.personal_id) };
-    // Siguiente visita: mismo cliente, servicio y personal; IV, fecha, foto y observaciones nuevos
-    if (desde) s = { ...s, id: undefined, fecha: hoy(), iv: "", csi: "", observaciones: "", foto: null, estanques: null, visita: data.visita + 1, serie_id: serie(data) };
+    // Siguiente visita: mismo cliente, servicio y personal; IV, fecha y fotos nuevos
+    if (desde) s = { ...s, id: undefined, fecha: hoy(), iv: "", csi: "", observaciones: "", foto: null, foto_obs: null, estanques: null, visita: data.visita + 1, serie_id: serie(data) };
   }
   const [clientes, pers, coord] = await Promise.all([
     clientesEmpresa(),
@@ -129,6 +130,12 @@ async function formulario(id, desde = null) {
   // En un servicio nuevo, quien lo registra aparece marcado si está vinculado a Personal
   const marcados = id || desde ? s.ops : personal.filter((p) => p.activo && p.usuario_id === H.usuario.id).map((p) => p.id);
   const tipos = [...new Set([...opcionesServicio(), ...s.tipos])];
+  const campoFoto = (k, titulo, nota) => `
+      <label>${titulo} <span class="muted small">(${nota})</span>${s[k] ? ` <span class="muted small">· ya tiene una; elige otra para reemplazarla</span>` : ""}</label>
+      <div class="acciones" style="margin:0;align-items:center">
+        <label class="btn subir">Tomar foto<input type="file" data-foto="${k}" accept="image/*" capture="environment"></label>
+        <label class="btn subir">Elegir de la galería<input type="file" data-foto="${k}" accept="image/*"></label>
+        <span class="muted small" id="nombre-${k}"></span></div>`;
   const v = vista(`
     <a href="#/servicios" class="volver">← Servicios</a>
     <h1>${id ? "Editar servicio" : desde ? `${ORDINAL[s.visita] ? ORDINAL[s.visita][0].toUpperCase() + ORDINAL[s.visita].slice(1) : "Siguiente"} visita` : "Nuevo servicio"}</h1>
@@ -163,12 +170,8 @@ async function formulario(id, desde = null) {
       <div id="otros-box" ${s.tipos.includes("Otros") ? "" : "hidden"}>
         <label for="f-otros" class="req">Especifica "Otros"</label><input id="f-otros" value="${esc(s.otros_detalle)}">
       </div>
-      <label for="f-obs">Observaciones</label><textarea id="f-obs">${esc(s.observaciones)}</textarea>
-      <label>Foto observaciones <span class="muted small">(una foto de las observaciones del IV)</span>${s.foto ? " · ya tiene una; elige otra para reemplazarla" : ""}</label>
-      <div class="acciones" style="margin:0;align-items:center">
-        <label class="btn subir">Tomar foto<input type="file" id="f-foto-cam" accept="image/*" capture="environment"></label>
-        <label class="btn subir">Elegir de la galería<input type="file" id="f-foto" accept="image/*"></label>
-        <span class="muted small" id="f-foto-nombre"></span></div>
+      ${campoFoto("foto_obs", "Foto observaciones", "una foto de las observaciones del IV")}
+      ${campoFoto("foto", "Foto", "el IV completo y otras cosas, opcional")}
       <div class="guardar"><a class="btn" href="#/servicios">Cancelar</a>
         <button class="primary" type="submit" id="btn-guardar">${id ? "Guardar cambios" : "Guardar servicio"}</button></div>
     </form>`);
@@ -185,13 +188,14 @@ async function formulario(id, desde = null) {
   $("#f-cliente", v).onchange = pintarSan;
   // CSI: se entrega con la última visita (visita N de N)
   $("#f-visitas", v).oninput = () => { $("#csi-box").hidden = Number($("#f-visitas").value) !== s.visita; };
-  // Foto: de la cámara o de la galería (la última que se elija)
-  let foto = null;
-  for (const id of ["#f-foto-cam", "#f-foto"]) $(id, v).onchange = (ev) => {
-    foto = ev.target.files[0] || foto;
-    ev.target.value = "";
-    $("#f-foto-nombre").textContent = foto ? "✓ " + foto.name : "";
-  };
+  // Cada foto: de la cámara o de la galería (la última que se elija)
+  const elegidas = {};
+  $$("[data-foto]", v).forEach((inp) => (inp.onchange = () => {
+    const k = inp.dataset.foto;
+    elegidas[k] = inp.files[0] || elegidas[k];
+    inp.value = "";
+    $("#nombre-" + k).textContent = elegidas[k] ? "✓ " + elegidas[k].name : "";
+  }));
   $("#f-tipos", v).onchange = () => {
     const marcados = $$("#f-tipos input:checked").map((i) => i.value), seap = marcados.includes("SEAP");
     $("#otros-box").hidden = !marcados.includes("Otros");
@@ -224,7 +228,7 @@ async function formulario(id, desde = null) {
     const sanitizacion_id = seap ? $("#f-san").value : null, estanques = seap ? Number($("#f-estanques").value) : null;
     if (seap && !sanitizacion_id) return aviso("SEAP: el cliente no tiene una sanitización coordinada.", true);
     if (seap && !(Number.isInteger(estanques) && estanques >= 1)) { $("#f-estanques").focus(); return aviso("Indica cuántos estanques se sanitizaron.", true); }
-    const fila = { cliente_id, fecha: fechaS, tipos: tiposSel, otros_detalle: otros, observaciones: $("#f-obs").value.trim() || null, iv, visitas,
+    const fila = { cliente_id, fecha: fechaS, tipos: tiposSel, otros_detalle: otros, observaciones: s.observaciones || null, iv, visitas,
       sanitizacion_id, estanques, csi };
     if (!id) Object.assign(fila, { empresa_id: H.empresa.id, visita: s.visita, serie_id: s.serie_id });
     const btn = $("#btn-guardar");
@@ -234,12 +238,13 @@ async function formulario(id, desde = null) {
     if (r.error) { btn.disabled = false; return aviso("Error al guardar: " + msgError(r.error), true); }
     const sid = r.data;
     olvidarAvisos(); // la próxima visita del calendario puede haber cambiado
-    if (foto) {
-      const ok = await subirMedios({ bucket: "servicios", carpeta: H.empresa.id, files: [foto], tipo: "foto",
-        registrar: (ruta) => sb.from("servicios").update({ foto: ruta }).eq("id", sid) });
+    for (const k of ["foto_obs", "foto"]) {
+      if (!elegidas[k]) continue;
+      const ok = await subirMedios({ bucket: "servicios", carpeta: H.empresa.id, files: [elegidas[k]], tipo: "foto",
+        registrar: (ruta) => sb.from("servicios").update({ [k]: ruta }).eq("id", sid) });
       if (!ok) { btn.disabled = false; location.hash = `#/servicios/${sid}/editar`; return; } // el servicio quedó guardado; falta la foto
       // shortcut: la foto anterior solo se borra si la subió este usuario o es admin; si no, queda sin uso en el bucket
-      if (s.foto) await sb.storage.from("servicios").remove([s.foto]);
+      if (s[k]) await sb.storage.from("servicios").remove([s[k]]);
     }
     aviso(id ? "Cambios guardados." : "Servicio registrado.");
     location.hash = "#/servicios";

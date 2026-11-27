@@ -644,7 +644,7 @@ begin
   return exists (select 1 from fotos_equipo where ruta = p_ruta)
       or exists (select 1 from videos_equipo where ruta = p_ruta)
       or exists (select 1 from ot_archivos where ruta = p_ruta)
-      or exists (select 1 from servicios where foto = p_ruta);
+      or exists (select 1 from servicios where foto = p_ruta or foto_obs = p_ruta);
 end $$;
 -- Bucket privado; 50 MB por archivo. Ruta: <empresa>/<equipo>/<archivo>
 insert into storage.buckets (id, name, public, file_size_limit)
@@ -1389,6 +1389,7 @@ alter table servicios add column if not exists visita integer not null default 1
 alter table servicios add column if not exists visitas integer not null default 1;  -- …de M
 alter table servicios add column if not exists serie_id uuid references servicios(id) on delete set null;
 alter table servicios add column if not exists foto text;               -- ruta en el bucket "servicios"
+alter table servicios add column if not exists foto_obs text;           -- foto de las observaciones del IV (reemplaza al texto)
 alter table servicios drop constraint if exists servicios_iv_valido;
 alter table servicios add constraint servicios_iv_valido check (iv is null or iv ~ '^[0-9]{4,}$');
 alter table servicios drop constraint if exists servicios_visitas_validas;

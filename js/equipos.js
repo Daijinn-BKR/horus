@@ -466,8 +466,14 @@ async function formulario(id) {
         <select id="f-estado" name="estado"><option value="">(sin estado)</option>
           ${unicos([...estados, estadoActual]).map((o) => `<option${o === estadoActual ? " selected" : ""}>${esc(o)}</option>`).join("")}
         </select></div>
-      ${e ? "" : `<div class="panel"><h2>Fotos</h2><input type="file" name="fotos" accept="image/*" multiple>
-        <p class="muted small" style="margin:6px 0 0">Opcional. También puedes agregar fotos y videos después, desde la ficha.</p></div>`}
+      <div class="panel"><h2>Fotos y videos</h2>
+        <div class="acciones" style="margin:0">
+          <label class="btn subir">+ Agregar fotos<input type="file" data-medio="foto" accept="image/*" multiple></label>
+          <label class="btn subir">Tomar foto<input type="file" data-medio="foto" accept="image/*" capture="environment"></label>
+          <label class="btn subir">+ Agregar videos<input type="file" data-medio="video" accept="video/*" multiple></label>
+          <label class="btn subir">Grabar video<input type="file" data-medio="video" accept="video/*" capture="environment"></label></div>
+        <p class="muted small" id="f-medios" style="margin:6px 0 0"></p>
+        <p class="muted small" style="margin:6px 0 0">Opcional. Se suben al guardar${e ? " y se suman a los que ya tiene" : ""}. Máximo 50 MB por video.</p></div>
       <div class="guardar"><a class="btn" href="${volver}">Cancelar</a>
         <button type="submit" class="primary" id="btn-guardar">${e ? "Guardar cambios" : "Guardar equipo"}</button></div>
     </form>`);
@@ -477,6 +483,14 @@ async function formulario(id) {
     $("[name=encargados]", v).value = $$("#f-encargados input:checked").map((i) => i.value).join(", ");
   };
   $("#f-cliente", v).focus();
+  // Fotos y videos elegidos (de la galería o de la cámara); se suben después de guardar el equipo
+  const medios = { foto: [], video: [] };
+  $$("[data-medio]", v).forEach((inp) => (inp.onchange = () => {
+    medios[inp.dataset.medio].push(...inp.files);
+    inp.value = "";
+    const n = (k, uno, varios) => medios[k].length ? `${medios[k].length} ${medios[k].length === 1 ? uno : varios}` : "";
+    $("#f-medios").textContent = "✓ " + [n("foto", "foto", "fotos"), n("video", "video", "videos")].filter(Boolean).join(" y ");
+  }));
 
   $("#form-equipo", v).onsubmit = async (ev) => {
     ev.preventDefault();
@@ -502,8 +516,7 @@ async function formulario(id) {
       ? await sb.from("equipos").update(datos).eq("id", e.id).select("*").single()
       : await sb.from("equipos").insert({ ...datos, empresa_id: H.empresa.id }).select("*").single();
     if (res.error) { btn.disabled = false; aviso("No se pudo guardar: " + msgError(res.error), true); return; }
-    const fotos = f.elements.fotos?.files;
-    if (fotos && fotos.length) await subirArchivos(res.data, fotos, "foto");
+    for (const t of ["foto", "video"]) if (medios[t].length) await subirArchivos(res.data, medios[t], t);
     aviso(e ? "Cambios guardados." : `Equipo ${res.data.id} creado.`);
     location.hash = "#/equipos/" + encodeURIComponent(res.data.id);
   };
