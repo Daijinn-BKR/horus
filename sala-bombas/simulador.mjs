@@ -3,6 +3,7 @@
 // Uso (Node 18+), desde la carpeta sala-bombas:
 //   1. Copia .env.example como .env y complétalo
 //   2. node simulador.mjs      (envía una lectura cada 10 s; Ctrl+C para parar)
+//      node simulador.mjs --alarma   (en ~2 min sube a ~44 °C y >80 % de humedad: dispara las alarmas)
 import { readFileSync, existsSync } from "node:fs";
 
 // Lee .env (sin dependencias)
@@ -19,10 +20,12 @@ if (!SUPABASE_URL || !SUPABASE_KEY || !DEVICE_KEY) {
   process.exit(1);
 }
 
+const ALARMA = process.argv.includes("--alarma");
 let t = 0;
 function lectura(motivo = "periodico", tiempo = t) {
-  const temp = 24 + 4 * Math.sin(tiempo / 30) + Math.random() * 0.4;
-  const hum = 60 + 12 * Math.cos(tiempo / 40) + Math.random();
+  const subida = ALARMA ? Math.min(tiempo, 12) : 0; // 12 ciclos de subida, luego se mantiene alta
+  const temp = 24 + 4 * Math.sin(tiempo / 30) + Math.random() * 0.4 + 1.7 * subida;
+  const hum = Math.min(99, 60 + 12 * Math.cos(tiempo / 40) + Math.random() + 2 * subida);
   const a = 17.62, b = 243.12, g = (a * temp) / (b + temp) + Math.log(hum / 100);
   const mov = Math.random() < 0.05;
   return {
@@ -51,6 +54,6 @@ async function ciclo() {
   try { await enviar(d); console.log(new Date().toLocaleTimeString("es-CL"), "OK", JSON.stringify(d)); }
   catch (e) { console.error(new Date().toLocaleTimeString("es-CL"), "Error:", e.message); }
 }
-console.log(`Simulando ${DEVICE_ID} → ${SUPABASE_URL} cada ${INTERVALO_S} s (Ctrl+C para parar)`);
+console.log(`Simulando ${DEVICE_ID} → ${SUPABASE_URL} cada ${INTERVALO_S} s${ALARMA ? " con ALARMA" : ""} (Ctrl+C para parar)`);
 ciclo();
 setInterval(ciclo, Number(INTERVALO_S) * 1000);

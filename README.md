@@ -169,6 +169,7 @@ bash instalar.sh
    ```bash
    node simulador.mjs
    ```
+   Con `node simulador.mjs --alarma` la temperatura y la humedad suben en ~2 minutos por encima de los umbrales (por defecto 40 °C y 80 %) y se disparan las alarmas.
 3. **ESP32 real**: en `sala-bombas/firmware/horus_sala_bombas/` copia `config.example.h` como `config.h` (no se sube al repositorio), complétalo (WiFi, URL y clave publishable de Supabase, ID y clave del módulo) y súbelo desde Arduino IDE. `config.h` trae el certificado raíz de Supabase (`CA_RAIZ`): el ESP32 comprueba que habla con Supabase de verdad. Si algún día deja de conectar por el certificado, el comentario en `config.example.h` explica cómo obtener el nuevo. Conexiones y librerías: igual que en `legado/omega-sala-bombas/README.md`. Ahora envía por HTTPS directo a Supabase, así que ya no hace falta un PC servidor encendido.
 
 Umbrales de alarma: se editan por módulo en Administración → Sala de bombas → Editar. Las lecturas se guardan 90 días.
