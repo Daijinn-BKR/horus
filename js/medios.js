@@ -23,6 +23,27 @@ async function reducirImagen(file, max = 1600) {
   }
 }
 
+// Muchos celulares graban en HEVC (H.265), que Chrome no reproduce en PC sin soporte en la tarjeta de video
+// (se ve negro). Si el navegador puede, se convierte a H.264, que se ve en todos. Si no, se sube tal cual.
+async function aH264(file) {
+  if (!window.VideoEncoder) return file;
+  try {
+    const M = await import("./vendor/mediabunny-1.65.0.min.mjs");
+    const input = new M.Input({ source: new M.BlobSource(file), formats: M.ALL_FORMATS });
+    const v = await input.getPrimaryVideoTrack();
+    if (!v || v.codec === "avc") return file;
+    const output = new M.Output({ format: new M.Mp4OutputFormat({ fastStart: "in-memory" }), target: new M.BufferTarget() });
+    const conv = await M.Conversion.init({ input, output, video: { codec: "avc", bitrate: M.QUALITY_MEDIUM } });
+    if (!conv.isValid || conv.discardedTracks.length) return file; // nunca perder el video ni el sonido
+    conv.onProgress = (p) => aviso(`Convirtiendo “${file.name}” para que se vea en todos los navegadores… ${Math.round(p * 100)} %`);
+    await conv.execute();
+    return new Blob([output.target.buffer], { type: "video/mp4" });
+  } catch (e) {
+    console.warn("No se pudo convertir el video, se sube el original:", e);
+    return file;
+  }
+}
+
 // Decide si es foto o video y lo deja listo para subir. Los buckets solo aceptan los tipos de TIPOS_FOTO
 // y TIPOS_VIDEO (no SVG, que puede traer código); el tipo se completa por la extensión si el celular no lo informa.
 const tipoValido = (lista, t) => (Object.values(lista).includes(t) ? t : null);
@@ -32,7 +53,9 @@ async function preparar(file, tipo) {
   if (tipo === "video") {
     const contentType = tipoValido(TIPOS_VIDEO, file.type) || TIPOS_VIDEO[ext];
     if (!contentType) throw new Error(`“${file.name}” no es un video.`);
-    if (file.size > MAX_VIDEO) throw new Error(`“${file.name}” pesa más de 50 MB. Grábalo más corto o en menor calidad.`);
+    const blob = await aH264(file);
+    if (blob.size > MAX_VIDEO) throw new Error(`“${file.name}” pesa más de 50 MB. Grábalo más corto o en menor calidad.`);
+    if (blob !== file) return { tipo, blob, ext: "mp4", contentType: "video/mp4" };
     return { tipo, blob: file, ext: ext || "mp4", contentType };
   }
   const blob = await reducirImagen(file);
