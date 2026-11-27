@@ -15,13 +15,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # Armar y publicar van en trabajos separados (como la plantilla de GitHub): en el mismo trabajo,
+  # deploy-pages a veces busca el artefacto antes de que GitHub lo registre ("No artifacts named …").
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Preparar sitio (solo los archivos de la app)
         env:
@@ -41,14 +40,22 @@ jobs:
             js/config.example.js > _site/js/config.js
           grep -q "TU-PROYECTO\|TU-CLAVE" _site/js/config.js && { echo "config.js no quedó completo"; exit 1; } || true
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       # Nombre distinto en cada intento: si se usa "Re-run", no quedan dos copias con el mismo nombre
       # (deploy-pages falla con "Multiple artifacts named github-pages")
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
           name: github-pages-${{ github.run_attempt }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
         with:
           artifact_name: github-pages-${{ github.run_attempt }}
