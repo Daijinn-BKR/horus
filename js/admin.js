@@ -6,6 +6,7 @@ import {
 } from "./nucleo.js";
 import { leerFactura } from "./facturas.js";
 import { leerArchivo, separarEncabezado } from "./excel.js";
+import { facturasPendientes, sinFacturasNuevas, avisoFacturasHTML } from "./calendario.js";
 
 export const rutas = [
   { patron: /^#\/admin$/, acceso: "admin", render: () => menu() },
@@ -359,9 +360,13 @@ const conLugar = (x) => { const comuna = lugar(x.comuna), ciudad = lugar(x.ciuda
 async function rutClientes() {
   cargando();
   // Sin la columna facturas (pesa ~90% de la tabla): se piden al hacer clic en el RUT
-  const { data, error } = await sb.from("rut_clientes").select("rut, nombre, direccion, comuna, ciudad, n_facturas").order("nombre");
+  const [{ data, error }, dias] = await Promise.all([
+    sb.from("rut_clientes").select("rut, nombre, direccion, comuna, ciudad, n_facturas").order("nombre"),
+    facturasPendientes(true).catch(() => null),
+  ]);
   const v = vista(cabecera("RUT Clientes", `<button id="rc-csv">Descargar CSV</button><button id="rc-cargar">Cargar CSV</button>
       <button class="primary" id="rc-subir">Subir facturas</button>`) + `
+    ${dias !== null ? avisoFacturasHTML(dias, false) : ""}
     <input id="rc-archivo" type="file" accept=".csv,.xlsx,.xls" hidden>
     <input id="rc-pdfs" type="file" accept="application/pdf,.pdf" multiple hidden>
     <div class="filtros"><input id="rc-buscar" type="search" placeholder="Nombre, RUT o comuna…" aria-label="Buscar" autocomplete="off"></div>
@@ -443,6 +448,8 @@ async function rutClientes() {
       rutClientes();
     } catch (e) { aviso("No se pudo leer el archivo: " + e.message, true); }
   };
+  const sf = $("[data-sin-facturas]", v);
+  if (sf) sf.onclick = async () => { sf.disabled = true; if (await sinFacturasNuevas()) $("#av-fact")?.remove(); else sf.disabled = false; };
   // Subir facturas (PDF, varias a la vez): se leen aquí y solo sus datos se suman a la lista, al instante (el PDF no se guarda)
   $("#rc-subir", v).onclick = () => $("#rc-pdfs", v).click();
   $("#rc-pdfs", v).onchange = async (ev) => {
@@ -473,7 +480,7 @@ async function rutClientes() {
           + (r.repetidas ? ` · ${nf.format(r.repetidas)} ya estaba${r.repetidas === 1 ? "" : "n"}` : "") + (malas.length ? ` · ${malas.length} con problemas` : "."), !!malas.length);
       }
       if (malas.length) alert("Facturas con problemas:\n\n" + malas.join("\n"));
-      if (items.length) rutClientes();
+      if (items.length) { document.dispatchEvent(new Event("horus-avisos")); rutClientes(); }
     } catch (e) { aviso("No se pudieron subir las facturas: " + msgError(e), true); }
     btn.disabled = false;
   };

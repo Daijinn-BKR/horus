@@ -291,7 +291,19 @@ do $$ declare r jsonb; begin
   if r <> '{"nuevos": 1, "agregadas": 2, "repetidas": 1}'::jsonb then raise exception 'FALLA: agregar_facturas devolvió %', r; end if;
   if (select n_facturas from rut_clientes where rut = '71.551.500-8') <> 2 then raise exception 'FALLA: la factura no se sumó al cliente'; end if;
   if (select comuna from rut_clientes where rut = '76.000.000-0') <> 'PUERTO MONTT' then raise exception 'FALLA: el cliente nuevo no quedó con sus datos'; end if;
+  if not exists (select 1 from recordatorios where clave = 'facturas' and hecho_en > now() - interval '1 minute') then
+    raise exception 'FALLA: subir facturas no reinició el recordatorio'; end if;
   raise notice 'OK: subir facturas suma, crea y no repite';
+end $$;
+reset role;
+-- Recordatorio de facturas: el operario no lo ve ni lo reinicia
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', true);
+set local role authenticated;
+do $$ declare ok boolean := false; begin
+  if exists (select 1 from recordatorios) then raise exception 'FALLA: un operario ve los recordatorios'; end if;
+  begin perform recordatorio_hecho('facturas'); exception when others then ok := true; end;
+  if not ok then raise exception 'FALLA: un operario reinició el recordatorio de facturas'; end if;
+  raise notice 'OK: recordatorio de facturas solo para el admin';
 end $$;
 reset role;
 

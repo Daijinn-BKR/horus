@@ -204,7 +204,7 @@ async function pintarAvisos() {
   const n = await calendario.contarAvisos();
   $("#avisos-n").textContent = n > 99 ? "99+" : n;
   $("#avisos-n").hidden = !n;
-  b.title = n ? `${n} aviso${n === 1 ? "" : "s"}: clientes sin RUT o visitas próximas` : "Sin avisos";
+  b.title = n ? `${n} aviso${n === 1 ? "" : "s"}: clientes sin RUT, visitas próximas o facturas por subir` : "Sin avisos";
   b.setAttribute("aria-label", b.title);
 }
 $("#btn-avisos").addEventListener("click", () => (location.hash = "#/avisos"));

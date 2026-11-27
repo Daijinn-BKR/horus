@@ -1731,6 +1731,8 @@ begin
       agregadas := agregadas + 1;
     end if;
   end loop;
+  insert into recordatorios (clave, hecho_por) values ('facturas', auth.uid())
+  on conflict (clave) do update set hecho_en = now(), hecho_por = excluded.hecho_por;
   return jsonb_build_object('nuevos', nuevos, 'agregadas', agregadas, 'repetidas', repetidas);
 end $$;
 revoke execute on function agregar_facturas(jsonb) from anon, public;
@@ -1931,5 +1933,26 @@ revoke execute on function fotos_personal(text) from anon, public;
 grant  execute on function fotos_personal(text) to authenticated;
 revoke all on function avatar_companero(text) from public, anon;
 grant execute on function avatar_companero(text) to authenticated;
+
+-- =====================================================================
+--  Recordatorio semanal (solo admin): subir las facturas nuevas en RUT Clientes.
+--  Se reinicia al subir facturas o con el botón "No hay nuevas facturas". La campanita avisa a los 7 días.
+-- =====================================================================
+create table if not exists recordatorios (
+  clave      text primary key check (clave in ('facturas')),
+  hecho_en   timestamptz not null default now(),
+  hecho_por  uuid references perfiles(id) on delete set null
+);
+call horus_preparar_rls(array['recordatorios']);
+create policy "recordatorios_ver" on recordatorios for select to authenticated using (es_admin());
+create or replace function recordatorio_hecho(p_clave text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not es_admin() then raise exception 'Solo un administrador puede hacer esto' using errcode = '42501'; end if;
+  insert into recordatorios (clave, hecho_por) values (p_clave, auth.uid())
+  on conflict (clave) do update set hecho_en = now(), hecho_por = excluded.hecho_por;
+end $$;
+revoke execute on function recordatorio_hecho(text) from anon, public;
+grant  execute on function recordatorio_hecho(text) to authenticated;
 
 notify pgrst, 'reload schema';

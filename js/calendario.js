@@ -34,7 +34,7 @@ const cuando = (p) => {
 
 // Planes con su próxima visita (se guarda 5 minutos para la campanita, que se pinta en cada cambio de pantalla)
 let cache = { clave: null, t: 0, datos: [] }, cacheSinRut = { clave: null, t: 0, datos: [] };
-export function olvidarAvisos() { cache.t = 0; cacheSinRut.t = 0; }
+export function olvidarAvisos() { cache.t = 0; cacheSinRut.t = 0; cacheFact.t = 0; }
 // Clientes creados sin RUT (urgentes): aparecen en la campanita hasta que alguien completa su RUT
 async function sinRut(forzar = false) {
   const clave = H.empresa?.id;
@@ -52,9 +52,36 @@ async function planes(forzar = false) {
   cache = { clave, t: Date.now(), datos: data };
   return data;
 }
-// Campanita: clientes sin RUT + visitas atrasadas o de los próximos 7 días. Si algo falla, no molesta: 0.
+// Recordatorio semanal del admin: subir las facturas nuevas en RUT Clientes. Devuelve los días desde la última vez
+// (Infinity si nunca), o null si no corresponde avisar.
+let cacheFact = { t: 0, dias: null };
+export async function facturasPendientes(forzar = false) {
+  if (!esAdmin()) return null;
+  if (forzar || Date.now() - cacheFact.t > 300000) {
+    const { data, error } = await sb.from("recordatorios").select("hecho_en").eq("clave", "facturas").maybeSingle();
+    if (error) throw error;
+    cacheFact = { t: Date.now(), dias: data ? Math.floor((Date.now() - Date.parse(data.hecho_en)) / 86400000) : Infinity };
+  }
+  return cacheFact.dias >= 7 ? cacheFact.dias : null;
+}
+export async function sinFacturasNuevas() {
+  const { error } = await sb.rpc("recordatorio_hecho", { p_clave: "facturas" });
+  if (error) { aviso(msgError(error), true); return false; }
+  cacheFact.t = 0;
+  document.dispatchEvent(new Event("horus-avisos"));
+  aviso("Listo: te lo vuelvo a recordar en una semana.");
+  return true;
+}
+const factTxt = (dias) => dias === Infinity ? "Todavía no se han subido facturas." : `Hace ${dias} días que no se suben facturas.`;
+export const avisoFacturasHTML = (dias, enlace = true) => `<div class="panel" id="av-fact"><h2>Facturas nuevas</h2>
+  <p class="muted small">${factTxt(dias)} Sube las facturas de la semana en RUT Clientes.</p>
+  <div class="acciones" style="margin:0">${enlace ? `<a class="btn primary" href="#/admin/ruts">Subir facturas</a>` : ""}
+    <button type="button" data-sin-facturas>No hay nuevas facturas</button></div></div>`;
+
+// Campanita: clientes sin RUT + visitas atrasadas o de los próximos 7 días + facturas (admin). Si algo falla, no molesta: 0.
 export async function contarAvisos() {
   let n = 0;
+  try { if ((await facturasPendientes()) !== null) n++; } catch { /* sin la tabla en la base todavía */ }
   try { n += (await sinRut()).length; } catch { /* sin la función en la base todavía */ }
   if (moduloActivo("servicios")) {
     try { n += (await planes()).filter((p) => p.activo && diasHasta(p.proxima) <= AVISO_DIAS).length; } catch { /* idem */ }
@@ -65,12 +92,14 @@ export async function contarAvisos() {
 // Página de la campanita
 async function avisos() {
   cargando();
-  let urgentes = [], visitas = [];
+  let urgentes = [], visitas = [], facturas = null;
+  try { facturas = await facturasPendientes(true); } catch { /* sin la tabla en la base todavía */ }
   try {
     urgentes = await sinRut(true);
     if (moduloActivo("servicios")) visitas = (await planes(true)).filter((p) => p.activo && diasHasta(p.proxima) <= AVISO_DIAS);
   } catch (e) { vista(`<p class="vacio">${esc(msgError(e))}</p>`); return; }
   const v = vista(`<h1>Avisos</h1>
+    ${facturas !== null ? avisoFacturasHTML(facturas) : ""}
     <div class="panel"><h2>Clientes sin RUT <span class="chip mal">Urgente</span></h2>
       <p class="muted small">Se crearon sin RUT. Escribe el RUT y guárdalo para que queden bien como clientes.</p>
       <div id="av-rut" class="lista">${urgentes.length ? urgentes.map((c) => `<div class="tarjeta"><div class="t-top">
@@ -83,6 +112,8 @@ async function avisos() {
         <div><strong>${esc(p.cliente)}</strong> · ${esc(p.tipo)}<div class="muted small">próxima: <b>${fecha(p.proxima)}</b></div></div>
         <div class="acciones" style="margin:0">${cuando(p)}</div></div></div>`).join("") : `<p class="muted">No hay visitas próximas.</p>`}</div>
       <a class="btn" href="#/servicios/calendario">Ver calendario</a></div>` : ""}`);
+  const sf = $("[data-sin-facturas]", v);
+  if (sf) sf.onclick = async () => { sf.disabled = true; if (await sinFacturasNuevas()) avisos(); else sf.disabled = false; };
   $("#av-rut", v).onclick = async (ev) => {
     const id = ev.target.closest("[data-guardar]")?.dataset.guardar;
     if (!id) return;
