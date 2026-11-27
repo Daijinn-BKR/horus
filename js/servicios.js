@@ -77,7 +77,7 @@ async function lista() {
         ${tags(s)}
         <div class="muted small">Personal: ${s.servicio_personal.map((x) => esc(x.personal?.nombre)).join(", ") || "—"}</div>
         ${s.observaciones ? `<p style="margin:8px 0 0;white-space:pre-wrap">${esc(s.observaciones)}</p>` : ""}
-        ${fotos[s.foto] ? `<a href="${esc(fotos[s.foto])}" target="_blank" rel="noopener"><img src="${esc(fotos[s.foto])}" alt="Foto de la visita"
+        ${fotos[s.foto] ? `<a href="${esc(fotos[s.foto])}" target="_blank" rel="noopener"><img src="${esc(fotos[s.foto])}" alt="Foto de las observaciones del IV"
           loading="lazy" style="margin-top:8px;max-width:160px;max-height:120px;border-radius:8px;object-fit:cover"></a>` : ""}
       </div>`).join("") : `<p class="vacio">Sin servicios registrados.</p>`;
     $$("#lista [data-del]").forEach((b) => (b.onclick = async () => {
@@ -164,7 +164,7 @@ async function formulario(id, desde = null) {
         <label for="f-otros" class="req">Especifica "Otros"</label><input id="f-otros" value="${esc(s.otros_detalle)}">
       </div>
       <label for="f-obs">Observaciones</label><textarea id="f-obs">${esc(s.observaciones)}</textarea>
-      <label>Foto${s.foto ? " (ya tiene una; elige otra para reemplazarla)" : ""}</label>
+      <label>Foto observaciones <span class="muted small">(una foto de las observaciones del IV)</span>${s.foto ? " · ya tiene una; elige otra para reemplazarla" : ""}</label>
       <div class="acciones" style="margin:0;align-items:center">
         <label class="btn subir">Tomar foto<input type="file" id="f-foto-cam" accept="image/*" capture="environment"></label>
         <label class="btn subir">Elegir de la galería<input type="file" id="f-foto" accept="image/*"></label>
